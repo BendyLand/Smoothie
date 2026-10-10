@@ -1,69 +1,130 @@
 import os
-import sys
+import io
+import json
+import uvicorn
 import bpy
 import bmesh
 
-def run_test():
-    print(f"Blender version: {bpy.app.version_string}")
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 
-    # 1. Clear out default startup scene objects
+app = FastAPI()
+
+OUTPUT_DIR = os.path.abspath("./output_test")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
+def generate_geometry(shape: str = "cube", bevel_width: float = 0.2, bevel_segments: int = 4) -> bytes:
+    """
+    Clears the Blender state, builds geometry with bmesh,
+    evaluates modifiers, and exports raw GLB bytes directly to memory.
+    """
+    # 1. Reset factory scene
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
-    # 2. Procedurally generate a base cube using BMesh
+    # 2. Build geometry via bmesh
     mesh_data = bpy.data.meshes.new("TargetMesh")
     bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=2.0)
+
+    if shape == "cube":
+        bmesh.ops.create_cube(bm, size=2.0)
+    elif shape == "cylinder":
+        bmesh.ops.create_cylinder(bm, cap_ends=True, radius=1.0, depth=2.0)
+    elif shape == "cone":
+        bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=32, radius1=1.0, radius2=0.0, depth=2.0)
+    elif shape == "monkey":
+        bmesh.ops.create_monkey(bm)
+    else:
+        bmesh.ops.create_cube(bm, size=2.0)
+
     bm.to_mesh(mesh_data)
     bm.free()
 
     obj = bpy.data.objects.new("TargetObject", mesh_data)
     bpy.context.collection.objects.link(obj)
 
-    # Make the object active and selected
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
+    # 3. Apply Bevel Modifier if width > 0
+    if bevel_width > 0:
+        bevel_mod = obj.modifiers.new(name="Bevel", type='BEVEL')
+        bevel_mod.width = bevel_width
+        bevel_mod.segments = int(bevel_segments)
 
-    # 3. Apply a modifier (Bevel)
-    bevel_mod = obj.modifiers.new(name="TestBevel", type='BEVEL')
-    bevel_mod.width = 0.2
-    bevel_mod.segments = 4
-
-    # Force a dependency graph update so modifiers evaluate
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    evaluated_obj = obj.evaluated_get(depsgraph)
-    poly_count = len(evaluated_obj.data.polygons)
-    vert_count = len(evaluated_obj.data.vertices)
-    print(f"Evaluated mesh: {vert_count} vertices, {poly_count} polygons")
-
-    # 4. Output directory setup
-    output_dir = os.path.abspath("./output_test")
-    os.makedirs(output_dir, exist_ok=True)
-
-    blend_path = os.path.join(output_dir, "scene.blend")
-    glb_path = os.path.join(output_dir, "model.glb")
-
-    # 5. Export native .blend file
+    # 4. Save persistent project files to disk for download endpoints
+    blend_path = os.path.join(OUTPUT_DIR, "scene.blend")
+    glb_path = os.path.join(OUTPUT_DIR, "model.glb")
+    
     bpy.ops.wm.save_as_mainfile(filepath=blend_path)
-    blend_size = os.path.getsize(blend_path)
-    print(f"Saved .blend: {blend_path} ({blend_size} bytes)")
-
-    # 6. Export web-ready .glb file
     bpy.ops.export_scene.gltf(
         filepath=glb_path,
         export_format='GLB',
         use_selection=False,
         export_apply=True
     )
-    glb_size = os.path.getsize(glb_path)
-    print(f"Exported .glb: {glb_path} ({glb_size} bytes)")
 
-    # 7. Verification check
-    if blend_size > 0 and glb_size > 0:
-        print("\nSUCCESS: Environment and headless export pipeline verified.")
-        return 0
-    else:
-        print("\nERROR: Output files were generated with 0 bytes.")
-        return 1
+    # 5. Read binary GLB bytes to send over the network
+    with open(glb_path, "rb") as f:
+        glb_bytes = f.read()
+
+    return glb_bytes
+
+
+# --- REST Download Endpoints ---
+
+@app.get("/export/blend")
+async def download_blend():
+    blend_path = os.path.join(OUTPUT_DIR, "scene.blend")
+    if os.path.exists(blend_path):
+        return FileResponse(blend_path, media_type="application/x-blender", filename="smoothie_scene.blend")
+    return Response(status_code=404, content="No scene generated yet.")
+
+
+@app.get("/export/glb")
+async def download_glb():
+    glb_path = os.path.join(OUTPUT_DIR, "model.glb")
+    if os.path.exists(glb_path):
+        return FileResponse(glb_path, media_type="model/gltf-binary", filename="smoothie_model.glb")
+    return Response(status_code=404, content="No model generated yet.")
+
+
+# --- WebSocket Stream ---
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    
+    # Send initial geometry state on first connection
+    initial_bytes = generate_geometry(shape="cube", bevel_width=0.2, bevel_segments=4)
+    await websocket.send_bytes(initial_bytes)
+
+    try:
+        while True:
+            # Client sends JSON commands: {"shape": "cube", "bevel_width": 0.3, "bevel_segments": 6}
+            data_text = await websocket.receive_text()
+            payload = json.loads(data_text)
+
+            shape = payload.get("shape", "cube")
+            bevel_width = float(payload.get("bevel_width", 0.0))
+            bevel_segments = int(payload.get("bevel_segments", 1))
+
+            glb_bytes = generate_geometry(
+                shape=shape,
+                bevel_width=bevel_width,
+                bevel_segments=bevel_segments
+            )
+            
+            # Send raw GLB binary stream directly to Three.js in browser
+            await websocket.send_bytes(glb_bytes)
+
+    except WebSocketDisconnect:
+        pass
+
+
+# --- Static Frontend Mount ---
+# Must remain at the bottom so it doesn't swallow API/WebSocket routes
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
 
 if __name__ == "__main__":
-    sys.exit(run_test())
+    # Host must be 0.0.0.0 so the Docker container accepts connections from the host machine
+    uvicorn.run(app, host="0.0.0.0", port=8000)
