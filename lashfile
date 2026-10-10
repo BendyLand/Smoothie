@@ -1,0 +1,26 @@
+build:
+  docker build -t smoothie-engine .
+
+rebuild:
+  docker build --no-cache -t smoothie-engine .
+
+run:
+  docker run --rm -it -p 8000:8000 -v $(pwd):/app smoothie-engine python script.py
+
+shell:
+  docker run --rm -it -v $(pwd):/app smoothie-engine bash
+
+clean:
+  rm -rf output_test
+  docker image rm smoothie-engine 2>/dev/null || true
+
+dev-up:
+  docker run -d --name smoothie-server -p 8000:8000 -v $(pwd):/app smoothie-engine python script.py
+
+dev-down:
+  docker stop smoothie-server
+  docker rm smoothie-server
+
+dev-logs:
+  docker logs -f smoothie-server
+
