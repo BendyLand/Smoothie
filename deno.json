@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "noImplicitAny": false
+  },
+  "lint": {
+    "rules": {
+      "exclude": ["no-window"]
+    }
+  },
+  "imports": {
+    "three": "npm:three@^0.160.0",
+    "three/addons/OrbitControls.js": "npm:three@^0.160.0/examples/jsm/controls/OrbitControls.js",
+    "three/addons/GLTFLoader.js": "npm:three@^0.160.0/examples/jsm/loaders/GLTFLoader.js",
+    "three/addons/TransformControls.js": "npm:three@^0.160.0/examples/jsm/controls/TransformControls.js"
+  }
+}

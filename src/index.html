@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Smoothie 3D</title>
+  <link rel="stylesheet" href="./style.css"> 
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "/vendor/three.module.js",
+      "three/addons/": "/vendor/addons/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="ui">
+    <div class="control-row">
+      <label for="shape-select">Shape:</label>
+      <select id="shape-select">
+        <option value="cube">Cube</option>
+        <option value="cylinder">Cylinder</option>
+        <option value="cone">Cone</option>
+        <option value="monkey">Monkey</option>
+      </select>
+      <button id="add-shape-btn" type="button">+ Add Shape</button>
+    </div>
+
+    <div class="control-row">
+      <label>Active Target:</label>
+      <strong id="active-target-label" style="color: #61afef;">Base Object</strong>
+    </div>
+
+    <div class="control-row">
+      <label>Gizmo Mode:</label>
+      <button id="mode-translate" type="button">Move (W)</button>
+      <button id="mode-rotate" type="button">Rotate (E)</button>
+      <button id="btn-delete" type="button">Delete</button>
+    </div>
+
+    <div class="control-row">
+      <label>Boolean Action:</label>
+      <button id="btn-union" type="button">Join (Union)</button>
+      <button id="btn-diff" type="button">Cut (Difference)</button>
+    </div>
+
+    <div class="control-row">
+      <label for="bevel-width">Bevel Width:</label>
+      <input type="range" id="bevel-width" min="0" max="0.5" step="0.02" value="0.2">
+      <span id="bevel-width-val">0.2</span>
+    </div>
+
+    <div class="control-row">
+      <label for="bevel-segments">Segments:</label>
+      <input type="range" id="bevel-segments" min="1" max="8" step="1" value="4">
+      <span id="bevel-segments-val">4</span>
+    </div>
+
+    <div class="control-row">
+      <a href="/export/blend" download><button type="button">Download .blend</button></a>
+      <a href="/export/glb" download><button type="button">Download .glb</button></a>
+    </div>
+  </div>
+
+  <div id="gizmo-hud">
+    <button id="hud-confirm" class="hud-btn" type="button" title="Confirm Placement">✓</button>
+    <button id="hud-cancel" class="hud-btn" type="button" title="Cancel Move">✕</button>
+  </div>
+
+  <canvas id="viewport"></canvas>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

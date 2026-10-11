@@ -13,3 +13,11 @@ shell:
 clean:
   rm -rf output_test
   docker image rm smoothie-engine 2>/dev/null || true
+
+compile:
+  esbuild src/utils.ts > src/utils.js
+  esbuild src/app.ts > src/app.js
+
+watch:
+  watch -n 120 lash compile
+

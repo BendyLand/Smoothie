@@ -1,59 +1,69 @@
 import os
-import io
 import json
 import uvicorn
 import bpy
 import bmesh
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket 
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="src"), name="static")
 
-OUTPUT_DIR = os.path.abspath("./output_test")
+OUTPUT_DIR = "/tmp/smoothie"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-
 def generate_geometry(shape: str = "cube", bevel_width: float = 0.2, bevel_segments: int = 4) -> bytes:
-    """
-    Clears the Blender state, builds geometry with bmesh,
-    evaluates modifiers, and exports raw GLB bytes directly to memory.
-    """
-    # 1. Reset factory scene
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
-    # 2. Build geometry via bmesh
     mesh_data = bpy.data.meshes.new("TargetMesh")
     bm = bmesh.new()
 
     if shape == "cube":
         bmesh.ops.create_cube(bm, size=2.0)
     elif shape == "cylinder":
-        bmesh.ops.create_cylinder(bm, cap_ends=True, radius=1.0, depth=2.0)
+        bmesh.ops.create_cone(
+            bm,
+            cap_ends=True,
+            cap_tris=False,
+            segments=32,
+            radius1=1.0,
+            radius2=1.0,
+            depth=2.0,
+        )
     elif shape == "cone":
-        bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=32, radius1=1.0, radius2=0.0, depth=2.0)
+        bmesh.ops.create_cone(
+            bm,
+            cap_ends=True,
+            cap_tris=False,
+            segments=32,
+            radius1=1.0,
+            radius2=0.0,
+            depth=2.0,
+        )
     elif shape == "monkey":
         bmesh.ops.create_monkey(bm)
     else:
         bmesh.ops.create_cube(bm, size=2.0)
 
+    bm.normal_update()
     bm.to_mesh(mesh_data)
     bm.free()
 
     obj = bpy.data.objects.new("TargetObject", mesh_data)
     bpy.context.collection.objects.link(obj)
 
-    # 3. Apply Bevel Modifier if width > 0
     if bevel_width > 0:
         bevel_mod = obj.modifiers.new(name="Bevel", type='BEVEL')
         bevel_mod.width = bevel_width
         bevel_mod.segments = int(bevel_segments)
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.modifier_apply(modifier="Bevel")
 
-    # 4. Save persistent project files to disk for download endpoints
-    blend_path = os.path.join(OUTPUT_DIR, "scene.blend")
     glb_path = os.path.join(OUTPUT_DIR, "model.glb")
-    
+    blend_path = os.path.join(OUTPUT_DIR, "scene.blend")
+
     bpy.ops.wm.save_as_mainfile(filepath=blend_path)
     bpy.ops.export_scene.gltf(
         filepath=glb_path,
@@ -62,12 +72,130 @@ def generate_geometry(shape: str = "cube", bevel_width: float = 0.2, bevel_segme
         export_apply=True
     )
 
-    # 5. Read binary GLB bytes to send over the network
     with open(glb_path, "rb") as f:
-        glb_bytes = f.read()
+        return f.read()
 
-    return glb_bytes
 
+def apply_boolean_operation(payload: dict) -> bytes:
+    base_obj = bpy.data.objects.get("TargetObject")
+    if not base_obj:
+        raise ValueError("Base object not found in scene.")
+
+    operation = payload.get("operation", "UNION")
+    tool_type = payload.get("tool_type", "cube")
+    pos = payload.get("position", [0.0, 0.0, 0.0])
+    quat = payload.get("quaternion", [1.0, 0.0, 0.0, 0.0])
+    scale = payload.get("scale", [1.0, 1.0, 1.0])
+
+    bpy.context.view_layer.objects.active = base_obj
+    for mod in list(base_obj.modifiers):
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+
+    tool_mesh = bpy.data.meshes.new("ToolMesh")
+    bm = bmesh.new()
+
+    if tool_type == "cylinder":
+        bmesh.ops.create_cone(
+            bm,
+            cap_ends=True,
+            cap_tris=False,
+            segments=32,
+            radius1=0.75,
+            radius2=0.75,
+            depth=1.5,
+        )
+    elif tool_type == "cone":
+        bmesh.ops.create_cone(
+            bm,
+            cap_ends=True,
+            cap_tris=False,
+            segments=32,
+            radius1=0.75,
+            radius2=0.0,
+            depth=1.5,
+        )
+    elif tool_type == "monkey":
+        bmesh.ops.create_monkey(bm)
+        bmesh.ops.holes_fill(bm, edges=bm.edges)
+    else:
+        bmesh.ops.create_cube(bm, size=1.5)
+
+    bm.normal_update()
+    bm.to_mesh(tool_mesh)
+    bm.free()
+
+    tool_obj = bpy.data.objects.new("ToolObject", tool_mesh)
+    bpy.context.collection.objects.link(tool_obj)
+
+    tool_obj.location = (pos[0], pos[1], pos[2])
+    tool_obj.rotation_mode = "QUATERNION"
+    tool_obj.rotation_quaternion = (quat[0], quat[1], quat[2], quat[3])
+    tool_obj.scale = (scale[0], scale[1], scale[2])
+
+    bpy.context.view_layer.update()
+
+    bool_mod = base_obj.modifiers.new(name="BoolOp", type="BOOLEAN")
+    bool_mod.operation = operation
+    bool_mod.object = tool_obj
+    bool_mod.solver = "MANIFOLD"
+
+    bpy.ops.object.select_all(action="DESELECT")
+    base_obj.select_set(True)
+    bpy.context.view_layer.objects.active = base_obj
+    bpy.ops.object.modifier_apply(modifier="BoolOp")
+
+    bpy.data.objects.remove(tool_obj, do_unlink=True)
+    bpy.data.meshes.remove(tool_mesh, do_unlink=True)
+    bpy.context.view_layer.update()
+
+    glb_path = os.path.join(OUTPUT_DIR, "model.glb")
+    blend_path = os.path.join(OUTPUT_DIR, "scene.blend")
+
+    bpy.ops.wm.save_as_mainfile(filepath=blend_path)
+    bpy.ops.export_scene.gltf(
+        filepath=glb_path,
+        export_format="GLB",
+        use_selection=False,
+        export_apply=True
+    )
+
+    with open(glb_path, "rb") as f:
+        return f.read()
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    init_bytes = generate_geometry("cube", 0.2, 4)
+    await websocket.send_bytes(init_bytes)
+
+    while True:
+        data = await websocket.receive_text()
+        payload = json.loads(data)
+
+        if payload.get("action") == "boolean":
+            glb_bytes = apply_boolean_operation(payload)
+            await websocket.send_bytes(glb_bytes)
+        elif payload.get("action") == "lock_transform":
+            target = payload.get("target")
+            if target == "base":
+                base_obj = bpy.data.objects.get("TargetObject")
+                if base_obj:
+                    pos = payload.get("position", [0.0, 0.0, 0.0])
+                    quat = payload.get("quaternion", [1.0, 0.0, 0.0, 0.0])
+                    scale = payload.get("scale", [1.0, 1.0, 1.0])
+                    base_obj.location = (pos[0], pos[1], pos[2])
+                    base_obj.rotation_mode = "QUATERNION"
+                    base_obj.rotation_quaternion = (quat[0], quat[1], quat[2], quat[3])
+                    base_obj.scale = (scale[0], scale[1], scale[2])
+                    bpy.context.view_layer.update()
+        else:
+            glb_bytes = generate_geometry(
+                shape=payload.get("shape", "cube"),
+                bevel_width=payload.get("bevel_width", 0.2),
+                bevel_segments=payload.get("bevel_segments", 4),
+            )
+            await websocket.send_bytes(glb_bytes)
 
 # --- REST Download Endpoints ---
 
@@ -75,7 +203,11 @@ def generate_geometry(shape: str = "cube", bevel_width: float = 0.2, bevel_segme
 async def download_blend():
     blend_path = os.path.join(OUTPUT_DIR, "scene.blend")
     if os.path.exists(blend_path):
-        return FileResponse(blend_path, media_type="application/x-blender", filename="smoothie_scene.blend")
+        return FileResponse(
+            blend_path,
+            media_type="application/x-blender",
+            filename="smoothie_scene.blend",
+        )
     return Response(status_code=404, content="No scene generated yet.")
 
 
@@ -83,46 +215,15 @@ async def download_blend():
 async def download_glb():
     glb_path = os.path.join(OUTPUT_DIR, "model.glb")
     if os.path.exists(glb_path):
-        return FileResponse(glb_path, media_type="model/gltf-binary", filename="smoothie_model.glb")
+        return FileResponse(
+            glb_path, media_type="model/gltf-binary", filename="smoothie_model.glb"
+        )
     return Response(status_code=404, content="No model generated yet.")
-
-
-# --- WebSocket Stream ---
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    
-    # Send initial geometry state on first connection
-    initial_bytes = generate_geometry(shape="cube", bevel_width=0.2, bevel_segments=4)
-    await websocket.send_bytes(initial_bytes)
-
-    try:
-        while True:
-            # Client sends JSON commands: {"shape": "cube", "bevel_width": 0.3, "bevel_segments": 6}
-            data_text = await websocket.receive_text()
-            payload = json.loads(data_text)
-
-            shape = payload.get("shape", "cube")
-            bevel_width = float(payload.get("bevel_width", 0.0))
-            bevel_segments = int(payload.get("bevel_segments", 1))
-
-            glb_bytes = generate_geometry(
-                shape=shape,
-                bevel_width=bevel_width,
-                bevel_segments=bevel_segments
-            )
-            
-            # Send raw GLB binary stream directly to Three.js in browser
-            await websocket.send_bytes(glb_bytes)
-
-    except WebSocketDisconnect:
-        pass
 
 
 # --- Static Frontend Mount ---
 # Must remain at the bottom so it doesn't swallow API/WebSocket routes
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+app.mount("/", StaticFiles(directory="src", html=True), name="static")
 
 
 if __name__ == "__main__":
