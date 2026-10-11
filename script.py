@@ -4,7 +4,7 @@ import uvicorn
 import bpy
 import bmesh
 
-from fastapi import FastAPI, WebSocket 
+from fastapi import FastAPI, WebSocket
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -14,23 +14,31 @@ app.mount("/static", StaticFiles(directory="src"), name="static")
 OUTPUT_DIR = "/tmp/smoothie"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def generate_geometry(shape: str = "cube", bevel_width: float = 0.2, bevel_segments: int = 4) -> bytes:
+
+def generate_geometry(
+    shape: str = "cube",
+    bevel_width: float = 0.2,
+    bevel_segments: int = 4,
+    scale: float = 1.0,
+) -> bytes:
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
     mesh_data = bpy.data.meshes.new("TargetMesh")
     bm = bmesh.new()
 
+    base_size = 2.0 * scale
+
     if shape == "cube":
-        bmesh.ops.create_cube(bm, size=2.0)
+        bmesh.ops.create_cube(bm, size=base_size)
     elif shape == "cylinder":
         bmesh.ops.create_cone(
             bm,
             cap_ends=True,
             cap_tris=False,
             segments=32,
-            radius1=1.0,
-            radius2=1.0,
-            depth=2.0,
+            radius1=1.0 * scale,
+            radius2=1.0 * scale,
+            depth=base_size,
         )
     elif shape == "cone":
         bmesh.ops.create_cone(
@@ -38,14 +46,16 @@ def generate_geometry(shape: str = "cube", bevel_width: float = 0.2, bevel_segme
             cap_ends=True,
             cap_tris=False,
             segments=32,
-            radius1=1.0,
+            radius1=1.0 * scale,
             radius2=0.0,
-            depth=2.0,
+            depth=base_size,
         )
     elif shape == "monkey":
         bmesh.ops.create_monkey(bm)
+        if scale != 1.0:
+            bmesh.ops.scale(bm, vec=(scale, scale, scale), verts=bm.verts)
     else:
-        bmesh.ops.create_cube(bm, size=2.0)
+        bmesh.ops.create_cube(bm, size=base_size)
 
     bm.normal_update()
     bm.to_mesh(mesh_data)
@@ -55,7 +65,7 @@ def generate_geometry(shape: str = "cube", bevel_width: float = 0.2, bevel_segme
     bpy.context.collection.objects.link(obj)
 
     if bevel_width > 0:
-        bevel_mod = obj.modifiers.new(name="Bevel", type='BEVEL')
+        bevel_mod = obj.modifiers.new(name="Bevel", type="BEVEL")
         bevel_mod.width = bevel_width
         bevel_mod.segments = int(bevel_segments)
         bpy.context.view_layer.objects.active = obj
@@ -66,10 +76,7 @@ def generate_geometry(shape: str = "cube", bevel_width: float = 0.2, bevel_segme
 
     bpy.ops.wm.save_as_mainfile(filepath=blend_path)
     bpy.ops.export_scene.gltf(
-        filepath=glb_path,
-        export_format='GLB',
-        use_selection=False,
-        export_apply=True
+        filepath=glb_path, export_format="GLB", use_selection=False, export_apply=True
     )
 
     with open(glb_path, "rb") as f:
@@ -153,10 +160,7 @@ def apply_boolean_operation(payload: dict) -> bytes:
 
     bpy.ops.wm.save_as_mainfile(filepath=blend_path)
     bpy.ops.export_scene.gltf(
-        filepath=glb_path,
-        export_format="GLB",
-        use_selection=False,
-        export_apply=True
+        filepath=glb_path, export_format="GLB", use_selection=False, export_apply=True
     )
 
     with open(glb_path, "rb") as f:
@@ -194,10 +198,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 shape=payload.get("shape", "cube"),
                 bevel_width=payload.get("bevel_width", 0.2),
                 bevel_segments=payload.get("bevel_segments", 4),
+                scale=payload.get("scale", 1.0),
             )
             await websocket.send_bytes(glb_bytes)
 
+
 # --- REST Download Endpoints ---
+
 
 @app.get("/export/blend")
 async def download_blend():

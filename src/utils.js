@@ -39,6 +39,8 @@ export function createAppState() {
     bevelWidthVal: document.getElementById("bevel-width-val"),
     bevelSegments: document.getElementById("bevel-segments"),
     bevelSegmentsVal: document.getElementById("bevel-segments-val"),
+    shapeScale: document.getElementById("shape-scale"),
+    shapeScaleVal: document.getElementById("shape-scale-val"),
     gizmoHud: document.getElementById("gizmo-hud"),
     hudConfirm: document.getElementById("hud-confirm"),
     hudCancel: document.getElementById("hud-cancel")
@@ -123,6 +125,9 @@ export function selectObject(state, obj) {
     state.transformGizmo.attach(state.selectedObject);
     applyHighlight(state.selectedObject, true);
     captureTransformSnapshot(state);
+    const currentScale = state.selectedObject.scale.x;
+    state.ui.shapeScale.value = currentScale.toFixed(2);
+    state.ui.shapeScaleVal.textContent = currentScale.toFixed(2);
     if (state.selectedObject === state.baseMesh) {
       state.ui.labelActiveTarget.textContent = "Base Object";
       state.ui.labelActiveTarget.style.color = "#61afef";
@@ -155,6 +160,7 @@ export function sendParameters(state) {
     return;
   const payload = {
     shape: state.ui.shapeSelect.value,
+    scale: parseFloat(state.ui.shapeScale.value),
     bevel_width: parseFloat(state.ui.bevelWidth.value),
     bevel_segments: parseInt(state.ui.bevelSegments.value, 10)
   };
@@ -198,6 +204,8 @@ export function cancelTransform(state) {
   state.selectedObject.position.copy(state.transformSnapshot.position);
   state.selectedObject.quaternion.copy(state.transformSnapshot.quaternion);
   state.selectedObject.scale.copy(state.transformSnapshot.scale);
+  state.ui.shapeScale.value = state.selectedObject.scale.x.toFixed(2);
+  state.ui.shapeScaleVal.textContent = state.selectedObject.scale.x.toFixed(2);
   state.selectedObject.updateMatrixWorld(true);
   state.transformGizmo.attach(state.selectedObject);
 }
@@ -262,12 +270,10 @@ export function commitBoolean(state, operation) {
 }
 export function updateGizmoHud(state) {
   const target = state.transformGizmo.object ?? state.selectedObject;
-  console.log("1");
   if (!target) {
     state.ui.gizmoHud.style.display = "none";
     return;
   }
-  console.log("2");
   state.camera.updateMatrixWorld(true);
   const worldPos = new THREE.Vector3();
   target.getWorldPosition(worldPos);
@@ -276,14 +282,12 @@ export function updateGizmoHud(state) {
     state.ui.gizmoHud.style.display = "none";
     return;
   }
-  console.log("3");
   const screenPos = worldPos.clone().project(state.camera);
   const screenX = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
   const screenY = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
   state.ui.gizmoHud.style.display = "flex";
   state.ui.gizmoHud.style.left = `${Math.round(screenX + 45)}px`;
   state.ui.gizmoHud.style.top = `${Math.round(screenY - 45)}px`;
-  console.log("4");
 }
 export function setupWebSocket(state) {
   state.socket.onopen = () => {
@@ -356,6 +360,17 @@ export function setupEventListeners(state) {
   });
   state.ui.btnDiff.addEventListener("click", () => {
     commitBoolean(state, "DIFFERENCE");
+  });
+  state.ui.shapeScale.addEventListener("input", (e) => {
+    const val = parseFloat(e.target.value);
+    state.ui.shapeScaleVal.textContent = val.toFixed(2);
+    if (state.selectedObject) {
+      state.selectedObject.scale.set(val, val, val);
+      state.selectedObject.updateMatrixWorld(true);
+      if (state.selectedObject === state.baseMesh) {
+        sendParameters(state);
+      }
+    }
   });
   state.ui.shapeSelect.addEventListener("change", () => {
     const newType = state.ui.shapeSelect.value;

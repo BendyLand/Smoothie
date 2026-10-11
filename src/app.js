@@ -4,7 +4,7 @@ import {
   setupWebSocket,
   setupEventListeners,
   startRenderLoop
-} from "./utils.ts";
+} from "./utils.js";
 const state = createAppState();
 initMonkeyCache(state);
 setupWebSocket(state);

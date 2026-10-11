@@ -17,6 +17,8 @@ export interface AppUI {
   bevelWidthVal: HTMLSpanElement;
   bevelSegments: HTMLInputElement;
   bevelSegmentsVal: HTMLSpanElement;
+  shapeScale: HTMLInputElement;
+  shapeScaleVal: HTMLSpanElement;
   gizmoHud: HTMLElement;
   hudConfirm: HTMLButtonElement;
   hudCancel: HTMLButtonElement;
@@ -97,6 +99,8 @@ export function createAppState(): AppState {
     bevelWidthVal: document.getElementById('bevel-width-val') as HTMLSpanElement,
     bevelSegments: document.getElementById('bevel-segments') as HTMLInputElement,
     bevelSegmentsVal: document.getElementById('bevel-segments-val') as HTMLSpanElement,
+    shapeScale: document.getElementById('shape-scale') as HTMLInputElement,
+    shapeScaleVal: document.getElementById('shape-scale-val') as HTMLSpanElement,
     gizmoHud: document.getElementById('gizmo-hud') as HTMLElement,
     hudConfirm: document.getElementById('hud-confirm') as HTMLButtonElement,
     hudCancel: document.getElementById('hud-cancel') as HTMLButtonElement,
@@ -193,6 +197,11 @@ export function selectObject(state: AppState, obj: THREE.Object3D | null): void 
     applyHighlight(state.selectedObject, true);
     captureTransformSnapshot(state);
 
+    // Sync slider value to the selected object's scale.x
+    const currentScale = state.selectedObject.scale.x;
+    state.ui.shapeScale.value = currentScale.toFixed(2);
+    state.ui.shapeScaleVal.textContent = currentScale.toFixed(2);
+
     if (state.selectedObject === state.baseMesh) {
       state.ui.labelActiveTarget.textContent = 'Base Object';
       state.ui.labelActiveTarget.style.color = '#61afef';
@@ -227,6 +236,7 @@ export function sendParameters(state: AppState): void {
 
   const payload = {
     shape: state.ui.shapeSelect.value,
+    scale: parseFloat(state.ui.shapeScale.value),
     bevel_width: parseFloat(state.ui.bevelWidth.value),
     bevel_segments: parseInt(state.ui.bevelSegments.value, 10),
   };
@@ -279,6 +289,9 @@ export function cancelTransform(state: AppState): void {
   state.selectedObject.quaternion.copy(state.transformSnapshot.quaternion);
   state.selectedObject.scale.copy(state.transformSnapshot.scale);
 
+  state.ui.shapeScale.value = state.selectedObject.scale.x.toFixed(2);
+  state.ui.shapeScaleVal.textContent = state.selectedObject.scale.x.toFixed(2);
+
   state.selectedObject.updateMatrixWorld(true);
   state.transformGizmo.attach(state.selectedObject);
 }
@@ -289,6 +302,7 @@ export function toBlenderTransform(
 ): { pos: THREE.Vector3; quat: THREE.Quaternion; scale: THREE.Vector3 } {
   obj.updateMatrixWorld(true);
 
+  // Basis transformation matrix: Three.js (Y-up) to Blender (Z-up)
   const C = new THREE.Matrix4().set(
     1,  0,  0,  0,
     0,  0, -1,  0,
@@ -377,13 +391,11 @@ export function commitBoolean(state: AppState, operation: 'UNION' | 'DIFFERENCE'
 
 export function updateGizmoHud(state: AppState): void {
   const target = state.transformGizmo.object ?? state.selectedObject;
-  console.log("1")
   if (!target) {
     state.ui.gizmoHud.style.display = 'none';
     return;
   }
 
-  console.log("2")
   state.camera.updateMatrixWorld(true);
 
   const worldPos = new THREE.Vector3();
@@ -395,7 +407,6 @@ export function updateGizmoHud(state: AppState): void {
     return;
   }
 
-  console.log("3")
   const screenPos = worldPos.clone().project(state.camera);
   const screenX = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
   const screenY = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
@@ -403,7 +414,6 @@ export function updateGizmoHud(state: AppState): void {
   state.ui.gizmoHud.style.display = 'flex';
   state.ui.gizmoHud.style.left = `${Math.round(screenX + 45)}px`;
   state.ui.gizmoHud.style.top = `${Math.round(screenY - 45)}px`;
-  console.log("4")
 }
 
 export function setupWebSocket(state: AppState): void {
@@ -497,6 +507,21 @@ export function setupEventListeners(state: AppState): void {
 
   state.ui.btnDiff.addEventListener('click', () => {
     commitBoolean(state, 'DIFFERENCE');
+  });
+
+  state.ui.shapeScale.addEventListener('input', (e: Event) => {
+    const val = parseFloat((e.target as HTMLInputElement).value);
+    state.ui.shapeScaleVal.textContent = val.toFixed(2);
+
+    if (state.selectedObject) {
+      state.selectedObject.scale.set(val, val, val);
+      state.selectedObject.updateMatrixWorld(true);
+
+      // If scaling base mesh, send updated scale to backend
+      if (state.selectedObject === state.baseMesh) {
+        sendParameters(state);
+      }
+    }
   });
 
   state.ui.shapeSelect.addEventListener('change', () => {
