@@ -1,23 +1,15 @@
 build:
-  docker build -t smoothie-engine .
-
-rebuild:
-  docker build --no-cache -t smoothie-engine .
+  odin build src -extra-linker-flags:"-L./lib" -debug 
+  mv src.bin smoothie
 
 run:
-  docker run --rm -it -p 8000:8000 -v $(pwd):/app smoothie-engine python script.py
+  odin run src -extra-linker-flags:"-L./lib"
 
-shell:
-  docker run --rm -it -v $(pwd):/app smoothie-engine bash
-
-clean:
-  rm -rf output_test
-  docker image rm smoothie-engine 2>/dev/null || true
+inspect:
+  gdb ./smoothie
 
 compile:
   esbuild src/utils.ts > src/utils.js
   esbuild src/app.ts > src/app.js
 
-watch:
-  watch -n 120 lash compile
 
