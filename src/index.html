@@ -24,11 +24,16 @@
         <option value="monkey">Monkey</option>
       </select>
       <button id="add-shape-btn" type="button">+ Add Shape</button>
+      <button id="btn-undo" type="button" title="Undo Boolean (Ctrl+Z)">Undo</button>
+      <button id="btn-redo" type="button" title="Redo Boolean (Ctrl+Shift+Z)">Redo</button>
     </div>
 
     <div class="control-row">
       <label>Active Target:</label>
       <strong id="active-target-label" style="color: #61afef;">Base Object</strong>
+    </div>
+    <div class="control-row" color: #abb2bf;">
+      <label>Dimensions:</label> <span id="target-dimensions" style="color: #98c379;">--</span>
     </div>
 
     <div class="control-row">
@@ -63,8 +68,8 @@
     </div>
 
     <div class="control-row">
-      <a href="/export/stl" download><button type="button">Download .stl</button></a>
       <a href="/export/glb" download><button type="button">Download .glb</button></a>
+      <a href="/export/stl" download><button type="button">Download .stl</button></a>
     </div>
   </div>
 
@@ -75,5 +80,20 @@
 
   <canvas id="viewport"></canvas>
   <script type="module" src="./app.js"></script>
+  <div id="scale-indicator" style="
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    font-family: monospace;
+    font-size: 11px;
+    color: #888;
+    pointer-events: none;
+    user-select: none;
+  ">
+  <div style="margin-bottom: 4px;">1 grid square = 1 m (GLB) / 10 mm (STL)</div>
+</div>
 </body>
 </html>

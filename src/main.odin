@@ -91,17 +91,50 @@ ws_session_proc :: proc(data: rawptr) {
 	current_base: ManifoldHandle = nil
 	defer if current_base != nil do destroy(current_base)
 
+	// Stack to store previous base handles for undo
+	undo_stack: [dynamic]ManifoldHandle
+	redo_stack: [dynamic]ManifoldHandle
+	defer {
+		for h in undo_stack do if h != nil do destroy(h)
+		delete(undo_stack)
+		for h in redo_stack do if h != nil do destroy(h)
+		delete(redo_stack)
+	}
+
 	for {
 		frame, ok_frame := read_frame(client.sock, &scratch_buf)
 		if !ok_frame || frame.opcode == .Close do break
-
 		if frame.opcode != .Text && frame.opcode != .Binary do continue
 
-		bool_cmd: Boolean_Payload
-		if err := json.unmarshal(frame.payload, &bool_cmd);
-		   err == nil && bool_cmd.action == "boolean" {
-			if current_base != nil {
-				// Create base tool primitive
+		Cmd_Header :: struct {
+			action: string,
+		}
+		hdr: Cmd_Header
+		json.unmarshal(frame.payload, &hdr)
+
+		switch hdr.action {
+		case "undo":
+			if len(undo_stack) > 0 {
+				append(&redo_stack, current_base)
+				current_base = pop(&undo_stack)
+			}
+			else {
+				continue
+			}
+
+		case "redo":
+			if len(redo_stack) > 0 {
+				append(&undo_stack, current_base)
+				current_base = pop(&redo_stack)
+			}
+			else {
+				continue
+			}
+
+		case "boolean":
+			bool_cmd: Boolean_Payload
+			if b_err := json.unmarshal(frame.payload, &bool_cmd);
+			   b_err == nil && current_base != nil {
 				tool := create_solid(
 					bool_cmd.tool_type,
 					f32(bool_cmd.scale.x),
@@ -109,7 +142,6 @@ ws_session_proc :: proc(data: rawptr) {
 					bool_cmd.bevel_segments,
 				)
 
-				// Rotate around its own center first
 				rotated_tool := rotate(
 					tool,
 					bool_cmd.rotation.x,
@@ -118,7 +150,6 @@ ws_session_proc :: proc(data: rawptr) {
 				)
 				destroy(tool)
 
-				// Translate to relative target position
 				placed_tool := translate(
 					rotated_tool,
 					bool_cmd.position.x,
@@ -136,15 +167,34 @@ ws_session_proc :: proc(data: rawptr) {
 				}
 
 				new_base := boolean_op(current_base, placed_tool, op)
-				destroy(current_base)
 				destroy(placed_tool)
-				current_base = new_base
+
+				if new_base != nil {
+					append(&undo_stack, current_base)
+
+					// Invalidate redo stack on new branch of edits
+					for h in redo_stack do if h != nil do destroy(h)
+					clear(&redo_stack)
+
+					if len(undo_stack) > 20 {
+						destroy(undo_stack[0])
+						ordered_remove(&undo_stack, 0)
+					}
+
+					current_base = new_base
+				}
 			}
-		}
-		else {
+
+		case:
+			// Standard base parameter updates (slider drags, dropdown changes)
 			params: Base_Params
 			if p_err := json.unmarshal(frame.payload, &params);
 			   p_err == nil && len(params.shape) > 0 {
+				for h in undo_stack do if h != nil do destroy(h)
+				clear(&undo_stack)
+				for h in redo_stack do if h != nil do destroy(h)
+				clear(&redo_stack)
+
 				if params.shape == "monkey" {
 					if current_base != nil {
 						destroy(current_base)
@@ -154,7 +204,6 @@ ws_session_proc :: proc(data: rawptr) {
 					sync.mutex_lock(&cache_mutex)
 					clear(&latest_glb)
 					append(&latest_glb, ..MONKEY_GLB)
-
 					clear(&latest_stl)
 					append(&latest_stl, ..MONKEY_STL)
 					sync.mutex_unlock(&cache_mutex)
@@ -163,9 +212,7 @@ ws_session_proc :: proc(data: rawptr) {
 					continue
 				}
 
-				if current_base != nil {
-					destroy(current_base)
-				}
+				if current_base != nil do destroy(current_base)
 				current_base = create_solid(
 					params.shape,
 					params.scale,
@@ -173,8 +220,12 @@ ws_session_proc :: proc(data: rawptr) {
 					params.bevel_segments,
 				)
 			}
+			else {
+				continue
+			}
 		}
 
+		// Repack and broadcast the active base mesh after undo/redo/boolean
 		if current_base != nil {
 			mesh_data := get_mesh_data(current_base)
 			defer destroy_mesh_data(&mesh_data)
@@ -185,7 +236,6 @@ ws_session_proc :: proc(data: rawptr) {
 			stl_payload := pack_mesh_to_stl(mesh_data)
 			defer delete(stl_payload)
 
-			// Safely write to shared download caches
 			sync.mutex_lock(&cache_mutex)
 			clear(&latest_glb)
 			append(&latest_glb, ..glb_payload)
@@ -248,7 +298,6 @@ main :: proc() {
 		switch req.path {
 		case "/":
 			serve_file(client_sock, "src/index.html")
-
 		case "/export/glb":
 			sync.mutex_lock(&cache_mutex)
 			has_data := len(latest_glb) > 0
@@ -257,7 +306,6 @@ main :: proc() {
 				copy(payload, latest_glb[:])
 			}
 			sync.mutex_unlock(&cache_mutex)
-
 			if has_data {
 				send_download_response(
 					client_sock,
@@ -276,7 +324,6 @@ main :: proc() {
 				)
 			}
 			delete(payload)
-
 		case "/export/stl":
 			sync.mutex_lock(&cache_mutex)
 			has_data := len(latest_stl) > 0
@@ -285,7 +332,6 @@ main :: proc() {
 				copy(payload, latest_stl[:])
 			}
 			sync.mutex_unlock(&cache_mutex)
-
 			if has_data {
 				send_download_response(client_sock, "smoothie_model.stl", "model/stl", payload)
 			}
@@ -299,12 +345,10 @@ main :: proc() {
 				)
 			}
 			delete(payload)
-
 		case:
 			rel_path := fmt.tprintf("src/%s", req.path[1:])
 			serve_file(client_sock, rel_path)
 		}
-
 		net.close(client_sock)
 	}
 }

@@ -43,7 +43,10 @@ export function createAppState() {
     shapeScaleVal: document.getElementById("shape-scale-val"),
     gizmoHud: document.getElementById("gizmo-hud"),
     hudConfirm: document.getElementById("hud-confirm"),
-    hudCancel: document.getElementById("hud-cancel")
+    hudCancel: document.getElementById("hud-cancel"),
+    btnUndo: document.getElementById("btn-undo"),
+    btnRedo: document.getElementById("btn-redo"),
+    targetDimensions: document.getElementById("target-dimensions")
   };
   const state = {
     ui,
@@ -65,7 +68,10 @@ export function createAppState() {
     raycaster: new THREE.Raycaster(),
     mouse: new THREE.Vector2(),
     transformSnapshot: null,
-    hudScreenVector: new THREE.Vector3()
+    hudScreenVector: new THREE.Vector3(),
+    undoCount: 0,
+    redoCount: 0,
+    hasBooleans: false
   };
   updateUiControlsAvailability(state);
   return state;
@@ -268,6 +274,7 @@ export function selectObject(state, obj) {
     state.ui.labelActiveTarget.style.color = "#888888";
   }
   updateUiControlsAvailability(state);
+  updateTargetDimensions(state);
 }
 export function getSelectableRoot(obj, sceneRoot) {
   let curr = obj;
@@ -409,6 +416,7 @@ export function setupWebSocket(state) {
           }
         });
         state.scene.add(state.baseMesh);
+        updateTargetDimensions(state);
         if (wasBaseSelected) {
           state.selectedObject = state.baseMesh;
           state.transformGizmo.attach(state.baseMesh);
@@ -448,11 +456,22 @@ export function setupEventListeners(state) {
   state.ui.btnDiff.addEventListener("click", () => {
     commitBoolean(state, "DIFFERENCE");
   });
+  state.ui.btnUndo.addEventListener("click", () => {
+    triggerUndo(state);
+  });
+  state.ui.btnRedo.addEventListener("click", () => {
+    triggerRedo(state);
+  });
   state.ui.shapeScale.addEventListener("input", (e) => {
+    const isBaseSelected = !state.selectedObject || state.selectedObject === state.baseMesh;
+    if (isBaseSelected && state.hasBooleans) {
+      return;
+    }
     const val = parseFloat(e.target.value);
     state.ui.shapeScaleVal.textContent = val.toFixed(2);
     if (state.selectedObject) {
       state.selectedObject.scale.set(val, val, val);
+      updateTargetDimensions(state);
       state.selectedObject.updateMatrixWorld(true);
       if (state.selectedObject === state.baseMesh) {
         sendParameters(state);
@@ -471,27 +490,42 @@ export function setupEventListeners(state) {
       state.ui.labelActiveTarget.textContent = `Tool (${newType.charAt(0).toUpperCase() + newType.slice(1)})`;
     } else {
       state.currentBaseShape = newType;
+      state.undoCount = 0;
+      state.redoCount = 0;
+      state.hasBooleans = false;
       sendParameters(state);
     }
     updateUiControlsAvailability(state);
   });
   state.ui.bevelWidth.addEventListener("input", (e) => {
+    const isBaseSelected = !state.selectedObject || state.selectedObject === state.baseMesh;
+    if (isBaseSelected && state.hasBooleans)
+      return;
     const target = e.target;
     state.ui.bevelWidthVal.textContent = target.value;
     updateSelectedGeometry(state);
   });
   state.ui.bevelWidth.addEventListener("change", () => {
-    if (!state.selectedObject || state.selectedObject === state.baseMesh) {
+    const isBaseSelected = !state.selectedObject || state.selectedObject === state.baseMesh;
+    if (isBaseSelected && state.hasBooleans)
+      return;
+    if (isBaseSelected) {
       sendParameters(state);
     }
   });
   state.ui.bevelSegments.addEventListener("input", (e) => {
+    const isBaseSelected = !state.selectedObject || state.selectedObject === state.baseMesh;
+    if (isBaseSelected && state.hasBooleans)
+      return;
     const target = e.target;
     state.ui.bevelSegmentsVal.textContent = target.value;
     updateSelectedGeometry(state);
   });
   state.ui.bevelSegments.addEventListener("change", () => {
-    if (!state.selectedObject || state.selectedObject === state.baseMesh) {
+    const isBaseSelected = !state.selectedObject || state.selectedObject === state.baseMesh;
+    if (isBaseSelected && state.hasBooleans)
+      return;
+    if (isBaseSelected) {
       sendParameters(state);
     }
   });
@@ -528,13 +562,27 @@ export function setupEventListeners(state) {
     selectObject(state, null);
   });
   self.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key.toLowerCase() === "y" || e.shiftKey && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        triggerRedo(state);
+        return;
+      }
+      if (e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        triggerUndo(state);
+        return;
+      }
+    }
     if (e.key === "w" || e.key === "W") {
       state.transformGizmo.setMode("translate");
     }
-    if (e.key === "e" || e.key === "E")
+    if (e.key === "e" || e.key === "E") {
       state.transformGizmo.setMode("rotate");
-    if (e.key === "Escape")
+    }
+    if (e.key === "Escape") {
       cancelTransform(state);
+    }
     if (e.key === "Enter") {
       e.preventDefault();
       confirmTransform(state);
@@ -575,32 +623,42 @@ export function commitBoolean(state, operation) {
     bevel_segments: bevelSegments
   };
   state.socket.send(JSON.stringify(payload));
+  state.undoCount += 1;
+  state.redoCount = 0;
+  state.hasBooleans = true;
   state.transformGizmo.detach();
   state.scene.remove(toolObj);
   const idx = state.shapeStack.indexOf(toolObj);
   if (idx !== -1) {
     state.shapeStack.splice(idx, 1);
   }
-  state.selectedObject = null;
-  state.ui.gizmoHud.style.display = "none";
+  selectObject(state, null);
+  updateTargetDimensions(state);
 }
 export function updateUiControlsAvailability(state) {
   const dropdownIsMonkey = state.ui.shapeSelect.value === "monkey";
-  const baseIsMonkey = state.currentBaseShape === "monkey";
+  const baseIsMonkey = state.currentBaseShape === "monkey" || state.baseMesh?.userData?.shapeType === "monkey";
+  const isToolSelected = state.selectedObject != null && state.selectedObject !== state.baseMesh && state.shapeStack.includes(state.selectedObject);
   let selectedIsMonkey = false;
   if (state.selectedObject) {
     selectedIsMonkey = state.selectedObject.userData.shapeType === "monkey" || state.baseMesh != null && (state.selectedObject === state.baseMesh || state.baseMesh.getObjectById(state.selectedObject.id) != null) && baseIsMonkey;
   }
   const isMonkeyActive = dropdownIsMonkey || baseIsMonkey || selectedIsMonkey;
-  const disableBooleans = isMonkeyActive || state.shapeStack.length === 0;
-  state.ui.bevelWidth.disabled = isMonkeyActive;
-  state.ui.bevelSegments.disabled = isMonkeyActive;
-  const bevelOpacity = isMonkeyActive ? "0.35" : "1.0";
-  const bevelCursor = isMonkeyActive ? "not-allowed" : "auto";
+  const isBaseOrNone = !isToolSelected;
+  const lockBase = isBaseOrNone && state.hasBooleans;
+  state.ui.shapeScale.disabled = lockBase;
+  state.ui.shapeScale.style.opacity = lockBase ? "0.35" : "1.0";
+  state.ui.shapeScale.style.cursor = lockBase ? "not-allowed" : "auto";
+  const disableBevels = isMonkeyActive || lockBase;
+  const bevelOpacity = disableBevels ? "0.35" : "1.0";
+  const bevelCursor = disableBevels ? "not-allowed" : "auto";
+  state.ui.bevelWidth.disabled = disableBevels;
+  state.ui.bevelSegments.disabled = disableBevels;
   state.ui.bevelWidth.style.opacity = bevelOpacity;
   state.ui.bevelWidth.style.cursor = bevelCursor;
   state.ui.bevelSegments.style.opacity = bevelOpacity;
   state.ui.bevelSegments.style.cursor = bevelCursor;
+  const disableBooleans = isMonkeyActive || state.shapeStack.length === 0;
   const booleanOpacity = disableBooleans ? "0.35" : "1.0";
   const booleanCursor = disableBooleans ? "not-allowed" : "pointer";
   const pointerEvents = disableBooleans ? "none" : "auto";
@@ -612,4 +670,55 @@ export function updateUiControlsAvailability(state) {
   state.ui.btnDiff.style.opacity = booleanOpacity;
   state.ui.btnDiff.style.cursor = booleanCursor;
   state.ui.btnDiff.style.pointerEvents = pointerEvents;
+  const canUndo = state.undoCount > 0 && !isMonkeyActive;
+  state.ui.btnUndo.disabled = !canUndo;
+  state.ui.btnUndo.style.opacity = canUndo ? "1.0" : "0.35";
+  state.ui.btnUndo.style.cursor = canUndo ? "pointer" : "not-allowed";
+  state.ui.btnUndo.style.pointerEvents = canUndo ? "auto" : "none";
+  const canRedo = state.redoCount > 0 && !isMonkeyActive;
+  state.ui.btnRedo.disabled = !canRedo;
+  state.ui.btnRedo.style.opacity = canRedo ? "1.0" : "0.35";
+  state.ui.btnRedo.style.cursor = canRedo ? "pointer" : "not-allowed";
+  state.ui.btnRedo.style.pointerEvents = canRedo ? "auto" : "none";
+}
+export function triggerRedo(state) {
+  if (state.redoCount <= 0 || state.socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  state.redoCount -= 1;
+  state.undoCount += 1;
+  state.hasBooleans = true;
+  state.socket.send(JSON.stringify({ action: "redo" }));
+  updateUiControlsAvailability(state);
+}
+export function triggerUndo(state) {
+  if (state.shapeStack.length > 0) {
+    deleteSelectedShape(state);
+    return;
+  }
+  if (state.undoCount <= 0 || state.socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  state.undoCount -= 1;
+  state.redoCount += 1;
+  if (state.undoCount === 0) {
+    state.hasBooleans = false;
+  }
+  state.socket.send(JSON.stringify({ action: "undo" }));
+  updateUiControlsAvailability(state);
+}
+const _measureBox = new THREE.Box3();
+const _measureSize = new THREE.Vector3();
+export function updateTargetDimensions(state) {
+  if (!state.ui.targetDimensions)
+    return;
+  const target = state.selectedObject ?? state.baseMesh;
+  if (!target) {
+    state.ui.targetDimensions.textContent = "--";
+    return;
+  }
+  target.updateMatrixWorld(true);
+  _measureBox.setFromObject(target);
+  _measureBox.getSize(_measureSize);
+  state.ui.targetDimensions.textContent = `${_measureSize.x.toFixed(2)} x ${_measureSize.y.toFixed(2)} x ${_measureSize.z.toFixed(2)}`;
 }
