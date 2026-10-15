@@ -1,6 +1,11 @@
 build:
+  lash compile
   odin build src -extra-linker-flags:"-L./lib" -debug 
-  mv src.bin smoothie
+  if [[ -f src.bin ]]; then
+    mv src.bin smoothie
+  else
+    echo "Build failed."
+  fi
 
 run:
   odin run src -extra-linker-flags:"-L./lib"
@@ -12,4 +17,5 @@ compile:
   esbuild src/utils.ts > src/utils.js
   esbuild src/app.ts > src/app.js
 
-
+check:
+  odin check src

@@ -69,7 +69,7 @@ export function createAppState() {
   };
 }
 export function initMonkeyCache(state) {
-  state.loader.load("/monkey.glb", (gltf) => {
+  state.loader.load("./monkey.glb", (gltf) => {
     gltf.scene.traverse((child) => {
       if (child.isMesh && !state.monkeyGeometry) {
         state.monkeyGeometry = child.geometry.clone();
@@ -79,18 +79,103 @@ export function initMonkeyCache(state) {
     console.error("Failed to preload /monkey.glb:", err);
   });
 }
-export function createPrimitiveGeometry(type, monkeyGeometry) {
+export function createBeveledBoxGeometry(width, height, depth, bevelWidth, bevelSegments) {
+  const maxBevel = Math.min(width, height, depth) / 2 - 0.01;
+  const b = Math.max(0, Math.min(bevelWidth, maxBevel));
+  if (b <= 0) {
+    return new THREE.BoxGeometry(width, height, depth);
+  }
+  const segs = Math.max(2, bevelSegments * 2);
+  const geom = new THREE.BoxGeometry(width, height, depth, segs, segs, segs);
+  const pos = geom.attributes.position;
+  const halfW = width / 2;
+  const halfH = height / 2;
+  const halfD = depth / 2;
+  const innerW = halfW - b;
+  const innerH = halfH - b;
+  const innerD = halfD - b;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const cx = Math.max(-innerW, Math.min(innerW, x));
+    const cy = Math.max(-innerH, Math.min(innerH, y));
+    const cz = Math.max(-innerD, Math.min(innerD, z));
+    const dx = x - cx;
+    const dy = y - cy;
+    const dz = z - cz;
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (len > 0) {
+      pos.setXYZ(i, cx + dx / len * b, cy + dy / len * b, cz + dz / len * b);
+    }
+  }
+  geom.computeVertexNormals();
+  return geom;
+}
+export function createBeveledCylinderGeometry(radius, height, bevelWidth, bevelSegments) {
+  const maxBevel = Math.min(radius - 0.05, height / 2 - 0.05);
+  const b = Math.max(0, Math.min(bevelWidth, maxBevel));
+  const radialSegments = Math.max(16, bevelSegments * 8);
+  if (b <= 0) {
+    return new THREE.CylinderGeometry(radius, radius, height, radialSegments);
+  }
+  const points = [];
+  const h2 = height / 2;
+  points.push(new THREE.Vector2(0, -h2));
+  points.push(new THREE.Vector2(radius - b, -h2));
+  const arcSteps = Math.max(2, bevelSegments);
+  for (let i = 1; i <= arcSteps; i++) {
+    const angle = -Math.PI / 2 + Math.PI / 2 * (i / arcSteps);
+    const x = radius - b + Math.cos(angle) * b;
+    const y = -h2 + b + Math.sin(angle) * b;
+    points.push(new THREE.Vector2(x, y));
+  }
+  for (let i = 1; i <= arcSteps; i++) {
+    const angle = Math.PI / 2 * (i / arcSteps);
+    const x = radius - b + Math.cos(angle) * b;
+    const y = h2 - b + Math.sin(angle) * b;
+    points.push(new THREE.Vector2(x, y));
+  }
+  points.push(new THREE.Vector2(0, h2));
+  const geom = new THREE.LatheGeometry(points, radialSegments);
+  geom.computeVertexNormals();
+  return geom;
+}
+export function createBeveledConeGeometry(radius, height, bevelWidth, bevelSegments) {
+  const maxBevel = Math.min(radius - 0.05, height / 2 - 0.05);
+  const b = Math.max(0, Math.min(bevelWidth, maxBevel));
+  const radialSegments = Math.max(16, bevelSegments * 8);
+  if (b <= 0) {
+    return new THREE.ConeGeometry(radius, height, radialSegments);
+  }
+  const points = [];
+  const h2 = height / 2;
+  points.push(new THREE.Vector2(0, -h2));
+  points.push(new THREE.Vector2(radius - b, -h2));
+  const arcSteps = Math.max(2, bevelSegments);
+  for (let i = 1; i <= arcSteps; i++) {
+    const angle = -Math.PI / 2 + Math.PI / 2 * (i / arcSteps);
+    const x = radius - b + Math.cos(angle) * b;
+    const y = -h2 + b + Math.sin(angle) * b;
+    points.push(new THREE.Vector2(x, y));
+  }
+  points.push(new THREE.Vector2(0, h2));
+  const geom = new THREE.LatheGeometry(points, radialSegments);
+  geom.computeVertexNormals();
+  return geom;
+}
+export function createPrimitiveGeometry(type, monkeyGeometry, bevelWidth = 0, bevelSegments = 4) {
   if (type === "cylinder") {
-    return new THREE.CylinderGeometry(0.75, 0.75, 1.5, 32);
+    return createBeveledCylinderGeometry(0.75, 1.5, bevelWidth, bevelSegments);
   } else if (type === "cone") {
-    return new THREE.ConeGeometry(0.75, 1.5, 32);
+    return createBeveledConeGeometry(0.75, 1.5, bevelWidth, bevelSegments);
   } else if (type === "monkey") {
     if (monkeyGeometry) {
       return monkeyGeometry.clone();
     }
-    return new THREE.BoxGeometry(1.5, 1.5, 1.5);
+    return createBeveledBoxGeometry(1.5, 1.5, 1.5, bevelWidth, bevelSegments);
   }
-  return new THREE.BoxGeometry(1.5, 1.5, 1.5);
+  return createBeveledBoxGeometry(1.5, 1.5, 1.5, bevelWidth, bevelSegments);
 }
 export function applyHighlight(obj, isHighlighted) {
   if (!obj)
@@ -116,6 +201,33 @@ export function captureTransformSnapshot(state) {
     scale: state.selectedObject.scale.clone()
   };
 }
+export function updateSelectedGeometry(state) {
+  if (!state.selectedObject)
+    return;
+  const bevelWidth = parseFloat(state.ui.bevelWidth.value);
+  const bevelSegments = parseInt(state.ui.bevelSegments.value, 10);
+  if (state.selectedObject !== state.baseMesh && state.selectedObject.isMesh) {
+    const mesh = state.selectedObject;
+    const shapeType = mesh.userData.shapeType || "cube";
+    mesh.userData.bevelWidth = bevelWidth;
+    mesh.userData.bevelSegments = bevelSegments;
+    const oldGeom = mesh.geometry;
+    mesh.geometry = createPrimitiveGeometry(shapeType, state.monkeyGeometry, bevelWidth, bevelSegments);
+    oldGeom.dispose();
+  } else if (state.selectedObject === state.baseMesh && state.baseMesh) {
+    const shapeType = state.baseMesh.userData.shapeType || state.currentBaseShape || "cube";
+    state.baseMesh.userData.bevelWidth = bevelWidth;
+    state.baseMesh.userData.bevelSegments = bevelSegments;
+    state.baseMesh.traverse((child) => {
+      if (child.isMesh) {
+        const mesh = child;
+        const oldGeom = mesh.geometry;
+        mesh.geometry = createPrimitiveGeometry(shapeType, state.monkeyGeometry, bevelWidth, bevelSegments);
+        oldGeom.dispose();
+      }
+    });
+  }
+}
 export function selectObject(state, obj) {
   if (state.selectedObject === obj)
     return;
@@ -128,6 +240,12 @@ export function selectObject(state, obj) {
     const currentScale = state.selectedObject.scale.x;
     state.ui.shapeScale.value = currentScale.toFixed(2);
     state.ui.shapeScaleVal.textContent = currentScale.toFixed(2);
+    const bevelWidth = state.selectedObject.userData.bevelWidth ?? parseFloat(state.ui.bevelWidth.value);
+    state.ui.bevelWidth.value = bevelWidth.toFixed(2);
+    state.ui.bevelWidthVal.textContent = bevelWidth.toFixed(2);
+    const bevelSegments = state.selectedObject.userData.bevelSegments ?? parseInt(state.ui.bevelSegments.value, 10);
+    state.ui.bevelSegments.value = bevelSegments.toString();
+    state.ui.bevelSegmentsVal.textContent = bevelSegments.toString();
     if (state.selectedObject === state.baseMesh) {
       state.ui.labelActiveTarget.textContent = "Base Object";
       state.ui.labelActiveTarget.style.color = "#61afef";
@@ -168,7 +286,9 @@ export function sendParameters(state) {
 }
 export function addSecondaryShape(state) {
   const shapeType = state.ui.shapeSelect.value;
-  const geom = createPrimitiveGeometry(shapeType, state.monkeyGeometry);
+  const bevelWidth = parseFloat(state.ui.bevelWidth.value);
+  const bevelSegments = parseInt(state.ui.bevelSegments.value, 10);
+  const geom = createPrimitiveGeometry(shapeType, state.monkeyGeometry, bevelWidth, bevelSegments);
   const mat = new THREE.MeshStandardMaterial({
     color: 14707829,
     roughness: 0.3,
@@ -178,6 +298,8 @@ export function addSecondaryShape(state) {
   });
   const mesh = new THREE.Mesh(geom, mat);
   mesh.userData.shapeType = shapeType;
+  mesh.userData.bevelWidth = bevelWidth;
+  mesh.userData.bevelSegments = bevelSegments;
   mesh.position.set(0, 0.5, 0);
   state.scene.add(mesh);
   state.shapeStack.push(mesh);
@@ -243,31 +365,6 @@ export function confirmTransform(state) {
   };
   state.socket.send(JSON.stringify(payload));
 }
-export function commitBoolean(state, operation) {
-  if (state.shapeStack.length === 0) {
-    console.warn("No tool shape in stack to commit.");
-    return;
-  }
-  const toolObj = state.selectedObject && state.selectedObject !== state.baseMesh ? state.selectedObject : state.shapeStack.at(-1);
-  const { pos, quat, scale } = toBlenderTransform(toolObj, state.baseMesh);
-  const payload = {
-    action: "boolean",
-    operation,
-    tool_type: toolObj.userData.shapeType || "cube",
-    position: [pos.x, pos.y, pos.z],
-    quaternion: [quat.w, quat.x, quat.y, quat.z],
-    scale: [scale.x, scale.y, scale.z]
-  };
-  state.socket.send(JSON.stringify(payload));
-  state.transformGizmo.detach();
-  state.scene.remove(toolObj);
-  const idx = state.shapeStack.indexOf(toolObj);
-  if (idx !== -1) {
-    state.shapeStack.splice(idx, 1);
-  }
-  state.selectedObject = null;
-  state.ui.gizmoHud.style.display = "none";
-}
 export function updateGizmoHud(state) {
   const target = state.transformGizmo.object ?? state.selectedObject;
   if (!target) {
@@ -292,14 +389,15 @@ export function updateGizmoHud(state) {
 export function setupWebSocket(state) {
   state.socket.onopen = () => {
     console.log("Connected to Smoothie engine WebSocket.");
+    sendParameters(state);
   };
   state.socket.onmessage = (event) => {
     if (event.data instanceof ArrayBuffer) {
       state.loader.parse(event.data, "", (gltf) => {
         const wasBaseSelected = state.selectedObject === state.baseMesh || state.selectedObject === null;
-        let prevPos = new THREE.Vector3();
-        let prevRot = new THREE.Euler();
-        let prevScale = new THREE.Vector3(1, 1, 1);
+        const prevPos = new THREE.Vector3();
+        const prevRot = new THREE.Euler();
+        const prevScale = new THREE.Vector3(1, 1, 1);
         if (state.baseMesh) {
           prevPos.copy(state.baseMesh.position);
           prevRot.copy(state.baseMesh.rotation);
@@ -308,6 +406,8 @@ export function setupWebSocket(state) {
         }
         state.baseMesh = gltf.scene;
         state.baseMesh.userData.shapeType = state.currentBaseShape;
+        state.baseMesh.userData.bevelWidth = parseFloat(state.ui.bevelWidth.value);
+        state.baseMesh.userData.bevelSegments = parseInt(state.ui.bevelSegments.value, 10);
         state.baseMesh.position.copy(prevPos);
         state.baseMesh.rotation.copy(prevRot);
         state.baseMesh.scale.copy(prevScale);
@@ -376,8 +476,10 @@ export function setupEventListeners(state) {
     const newType = state.ui.shapeSelect.value;
     if (state.selectedObject && state.selectedObject !== state.baseMesh) {
       const target = state.selectedObject;
+      const bevelWidth = target.userData.bevelWidth ?? parseFloat(state.ui.bevelWidth.value);
+      const bevelSegments = target.userData.bevelSegments ?? parseInt(state.ui.bevelSegments.value, 10);
       target.geometry.dispose();
-      target.geometry = createPrimitiveGeometry(newType, state.monkeyGeometry);
+      target.geometry = createPrimitiveGeometry(newType, state.monkeyGeometry, bevelWidth, bevelSegments);
       target.userData.shapeType = newType;
       state.ui.labelActiveTarget.textContent = `Tool (${newType.charAt(0).toUpperCase() + newType.slice(1)})`;
     } else {
@@ -388,6 +490,9 @@ export function setupEventListeners(state) {
   state.ui.bevelWidth.addEventListener("input", (e) => {
     const target = e.target;
     state.ui.bevelWidthVal.textContent = target.value;
+    updateSelectedGeometry(state);
+  });
+  state.ui.bevelWidth.addEventListener("change", () => {
     if (!state.selectedObject || state.selectedObject === state.baseMesh) {
       sendParameters(state);
     }
@@ -395,15 +500,18 @@ export function setupEventListeners(state) {
   state.ui.bevelSegments.addEventListener("input", (e) => {
     const target = e.target;
     state.ui.bevelSegmentsVal.textContent = target.value;
+    updateSelectedGeometry(state);
+  });
+  state.ui.bevelSegments.addEventListener("change", () => {
     if (!state.selectedObject || state.selectedObject === state.baseMesh) {
       sendParameters(state);
     }
   });
-  window.addEventListener("pointerdown", (e) => {
+  self.addEventListener("pointerdown", (e) => {
     state.pointerStartX = e.clientX;
     state.pointerStartY = e.clientY;
   });
-  window.addEventListener("pointerup", (e) => {
+  self.addEventListener("pointerup", (e) => {
     if (e.target !== state.ui.canvas)
       return;
     if (state.isGizmoInteracting || state.transformGizmo.axis !== null)
@@ -431,7 +539,7 @@ export function setupEventListeners(state) {
     }
     selectObject(state, null);
   });
-  window.addEventListener("keydown", (e) => {
+  self.addEventListener("keydown", (e) => {
     if (e.key === "w" || e.key === "W")
       state.transformGizmo.setMode("translate");
     if (e.key === "e" || e.key === "E")
@@ -443,7 +551,7 @@ export function setupEventListeners(state) {
       confirmTransform(state);
     }
   });
-  window.addEventListener("resize", () => {
+  self.addEventListener("resize", () => {
     state.camera.aspect = window.innerWidth / window.innerHeight;
     state.camera.updateProjectionMatrix();
     state.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -457,4 +565,33 @@ export function startRenderLoop(state) {
     state.renderer.render(state.scene, state.camera);
   }
   renderFrame();
+}
+export function commitBoolean(state, operation) {
+  if (state.shapeStack.length === 0) {
+    console.warn("No tool shape in stack to commit.");
+    return;
+  }
+  const toolObj = state.selectedObject && state.selectedObject !== state.baseMesh ? state.selectedObject : state.shapeStack.at(-1);
+  const { pos, quat, scale } = toBlenderTransform(toolObj, state.baseMesh);
+  const bevelWidth = toolObj.userData.bevelWidth ?? parseFloat(state.ui.bevelWidth.value);
+  const bevelSegments = toolObj.userData.bevelSegments ?? parseInt(state.ui.bevelSegments.value, 10);
+  const payload = {
+    action: "boolean",
+    operation,
+    tool_type: toolObj.userData.shapeType || "cube",
+    position: [pos.x, pos.y, pos.z],
+    quaternion: [quat.w, quat.x, quat.y, quat.z],
+    scale: [scale.x, scale.y, scale.z],
+    bevel_width: bevelWidth,
+    bevel_segments: bevelSegments
+  };
+  state.socket.send(JSON.stringify(payload));
+  state.transformGizmo.detach();
+  state.scene.remove(toolObj);
+  const idx = state.shapeStack.indexOf(toolObj);
+  if (idx !== -1) {
+    state.shapeStack.splice(idx, 1);
+  }
+  state.selectedObject = null;
+  state.ui.gizmoHud.style.display = "none";
 }
