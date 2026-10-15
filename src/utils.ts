@@ -1,7 +1,7 @@
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/OrbitControls.js';
-import { GLTFLoader } from 'three/addons/GLTFLoader.js';
-import { TransformControls } from 'three/addons/TransformControls.js';
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/OrbitControls.js";
+import { GLTFLoader } from "three/addons/GLTFLoader.js";
+import { TransformControls } from "three/addons/TransformControls.js";
 
 export interface AppUI {
   canvas: HTMLCanvasElement;
@@ -54,7 +54,7 @@ export interface AppState {
 }
 
 export function createAppState(): AppState {
-  const canvas = document.getElementById('viewport') as HTMLCanvasElement;
+  const canvas = document.getElementById("viewport") as HTMLCanvasElement;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
@@ -62,7 +62,12 @@ export function createAppState(): AppState {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x181818);
 
-  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+  const camera = new THREE.PerspectiveCamera(
+    45,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    100,
+  );
   camera.position.set(5, 4, 6);
 
   const orbit = new OrbitControls(camera, renderer.domElement);
@@ -83,27 +88,39 @@ export function createAppState(): AppState {
 
   const wsUrl = `ws://${window.location.host}/ws`;
   const socket = new WebSocket(wsUrl);
-  socket.binaryType = 'arraybuffer';
+  socket.binaryType = "arraybuffer";
 
   const ui: AppUI = {
     canvas,
-    shapeSelect: document.getElementById('shape-select') as HTMLSelectElement,
-    labelActiveTarget: document.getElementById('active-target-label') as HTMLElement,
-    addShapeBtn: document.getElementById('add-shape-btn') as HTMLButtonElement,
-    btnTranslate: document.getElementById('mode-translate') as HTMLButtonElement,
-    btnRotate: document.getElementById('mode-rotate') as HTMLButtonElement,
-    btnDelete: document.getElementById('btn-delete') as HTMLButtonElement,
-    btnUnion: document.getElementById('btn-union') as HTMLButtonElement,
-    btnDiff: document.getElementById('btn-diff') as HTMLButtonElement,
-    bevelWidth: document.getElementById('bevel-width') as HTMLInputElement,
-    bevelWidthVal: document.getElementById('bevel-width-val') as HTMLSpanElement,
-    bevelSegments: document.getElementById('bevel-segments') as HTMLInputElement,
-    bevelSegmentsVal: document.getElementById('bevel-segments-val') as HTMLSpanElement,
-    shapeScale: document.getElementById('shape-scale') as HTMLInputElement,
-    shapeScaleVal: document.getElementById('shape-scale-val') as HTMLSpanElement,
-    gizmoHud: document.getElementById('gizmo-hud') as HTMLElement,
-    hudConfirm: document.getElementById('hud-confirm') as HTMLButtonElement,
-    hudCancel: document.getElementById('hud-cancel') as HTMLButtonElement,
+    shapeSelect: document.getElementById("shape-select") as HTMLSelectElement,
+    labelActiveTarget: document.getElementById(
+      "active-target-label",
+    ) as HTMLElement,
+    addShapeBtn: document.getElementById("add-shape-btn") as HTMLButtonElement,
+    btnTranslate: document.getElementById(
+      "mode-translate",
+    ) as HTMLButtonElement,
+    btnRotate: document.getElementById("mode-rotate") as HTMLButtonElement,
+    btnDelete: document.getElementById("btn-delete") as HTMLButtonElement,
+    btnUnion: document.getElementById("btn-union") as HTMLButtonElement,
+    btnDiff: document.getElementById("btn-diff") as HTMLButtonElement,
+    bevelWidth: document.getElementById("bevel-width") as HTMLInputElement,
+    bevelWidthVal: document.getElementById(
+      "bevel-width-val",
+    ) as HTMLSpanElement,
+    bevelSegments: document.getElementById(
+      "bevel-segments",
+    ) as HTMLInputElement,
+    bevelSegmentsVal: document.getElementById(
+      "bevel-segments-val",
+    ) as HTMLSpanElement,
+    shapeScale: document.getElementById("shape-scale") as HTMLInputElement,
+    shapeScaleVal: document.getElementById(
+      "shape-scale-val",
+    ) as HTMLSpanElement,
+    gizmoHud: document.getElementById("gizmo-hud") as HTMLElement,
+    hudConfirm: document.getElementById("hud-confirm") as HTMLButtonElement,
+    hudCancel: document.getElementById("hud-cancel") as HTMLButtonElement,
   };
   const state: AppState = {
     ui,
@@ -117,7 +134,7 @@ export function createAppState(): AppState {
     baseMesh: null,
     shapeStack: [],
     selectedObject: null,
-    currentBaseShape: 'cube',
+    currentBaseShape: "cube",
     monkeyGeometry: null,
     isGizmoInteracting: false,
     pointerStartX: 0,
@@ -127,13 +144,13 @@ export function createAppState(): AppState {
     transformSnapshot: null,
     hudScreenVector: new THREE.Vector3(),
   };
-  updateBevelControlsAvailability(state);
+  updateUiControlsAvailability(state);
   return state;
 }
 
 export function initMonkeyCache(state: AppState): void {
   state.loader.load(
-    './monkey.glb',
+    "./monkey.glb",
     (gltf) => {
       gltf.scene.traverse((child) => {
         if ((child as THREE.Mesh).isMesh && !state.monkeyGeometry) {
@@ -143,8 +160,8 @@ export function initMonkeyCache(state: AppState): void {
     },
     undefined,
     (err) => {
-      console.error('Failed to preload /monkey.glb:', err);
-    }
+      console.error("Failed to preload /monkey.glb:", err);
+    },
   );
 }
 
@@ -153,7 +170,7 @@ export function createBeveledBoxGeometry(
   height: number,
   depth: number,
   bevelWidth: number,
-  bevelSegments: number
+  bevelSegments: number,
 ): THREE.BufferGeometry {
   const maxBevel = Math.min(width, height, depth) / 2 - 0.01;
   const b = Math.max(0, Math.min(bevelWidth, maxBevel));
@@ -188,7 +205,12 @@ export function createBeveledBoxGeometry(
 
     const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (len > 0) {
-      pos.setXYZ(i, cx + (dx / len) * b, cy + (dy / len) * b, cz + (dz / len) * b);
+      pos.setXYZ(
+        i,
+        cx + (dx / len) * b,
+        cy + (dy / len) * b,
+        cz + (dz / len) * b,
+      );
     }
   }
 
@@ -200,7 +222,7 @@ export function createBeveledCylinderGeometry(
   radius: number,
   height: number,
   bevelWidth: number,
-  bevelSegments: number
+  bevelSegments: number,
 ): THREE.BufferGeometry {
   const maxBevel = Math.min(radius - 0.05, height / 2 - 0.05);
   const b = Math.max(0, Math.min(bevelWidth, maxBevel));
@@ -242,7 +264,7 @@ export function createBeveledConeGeometry(
   radius: number,
   height: number,
   bevelWidth: number,
-  bevelSegments: number
+  bevelSegments: number,
 ): THREE.BufferGeometry {
   const maxBevel = Math.min(radius - 0.05, height / 2 - 0.05);
   const b = Math.max(0, Math.min(bevelWidth, maxBevel));
@@ -283,15 +305,15 @@ export function createPrimitiveGeometry(
   type: string,
   monkeyGeometry: THREE.BufferGeometry | null,
   bevelWidth: number = 0,
-  bevelSegments: number = 4
+  bevelSegments: number = 4,
 ): THREE.BufferGeometry {
-  if (type === 'cylinder') {
+  if (type === "cylinder") {
     return createBeveledCylinderGeometry(0.75, 1.5, bevelWidth, bevelSegments);
   }
-  else if (type === 'cone') {
+  else if (type === "cone") {
     return createBeveledConeGeometry(0.75, 1.5, bevelWidth, bevelSegments);
   }
-  else if (type === 'monkey') {
+  else if (type === "monkey") {
     if (monkeyGeometry) {
       return monkeyGeometry.clone();
     }
@@ -300,14 +322,19 @@ export function createPrimitiveGeometry(
   return createBeveledBoxGeometry(1.5, 1.5, 1.5, bevelWidth, bevelSegments);
 }
 
-export function applyHighlight(obj: THREE.Object3D | null, isHighlighted: boolean): void {
+export function applyHighlight(
+  obj: THREE.Object3D | null,
+  isHighlighted: boolean,
+): void {
   if (!obj) return;
   obj.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const mesh = child as THREE.Mesh;
       const mat = mesh.material as THREE.MeshStandardMaterial;
       if (mat) {
-        mat.emissive = isHighlighted ? new THREE.Color(0x334466) : new THREE.Color(0x000000);
+        mat.emissive = isHighlighted
+          ? new THREE.Color(0x334466)
+          : new THREE.Color(0x000000);
       }
     }
   });
@@ -331,18 +358,27 @@ export function updateSelectedGeometry(state: AppState): void {
   const bevelWidth = parseFloat(state.ui.bevelWidth.value);
   const bevelSegments = parseInt(state.ui.bevelSegments.value, 10);
 
-  if (state.selectedObject !== state.baseMesh && (state.selectedObject as THREE.Mesh).isMesh) {
+  if (
+    state.selectedObject !== state.baseMesh &&
+    (state.selectedObject as THREE.Mesh).isMesh
+  ) {
     const mesh = state.selectedObject as THREE.Mesh;
-    const shapeType = (mesh.userData.shapeType as string) || 'cube';
+    const shapeType = (mesh.userData.shapeType as string) || "cube";
     mesh.userData.bevelWidth = bevelWidth;
     mesh.userData.bevelSegments = bevelSegments;
 
     const oldGeom = mesh.geometry;
-    mesh.geometry = createPrimitiveGeometry(shapeType, state.monkeyGeometry, bevelWidth, bevelSegments);
+    mesh.geometry = createPrimitiveGeometry(
+      shapeType,
+      state.monkeyGeometry,
+      bevelWidth,
+      bevelSegments,
+    );
     oldGeom.dispose();
   }
   else if (state.selectedObject === state.baseMesh && state.baseMesh) {
-    const shapeType = (state.baseMesh.userData.shapeType as string) || state.currentBaseShape || 'cube';
+    const shapeType = (state.baseMesh.userData.shapeType as string) ||
+      state.currentBaseShape || "cube";
     state.baseMesh.userData.bevelWidth = bevelWidth;
     state.baseMesh.userData.bevelSegments = bevelSegments;
 
@@ -350,14 +386,22 @@ export function updateSelectedGeometry(state: AppState): void {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
         const oldGeom = mesh.geometry;
-        mesh.geometry = createPrimitiveGeometry(shapeType, state.monkeyGeometry, bevelWidth, bevelSegments);
+        mesh.geometry = createPrimitiveGeometry(
+          shapeType,
+          state.monkeyGeometry,
+          bevelWidth,
+          bevelSegments,
+        );
         oldGeom.dispose();
       }
     });
   }
 }
 
-export function selectObject(state: AppState, obj: THREE.Object3D | null): void {
+export function selectObject(
+  state: AppState,
+  obj: THREE.Object3D | null,
+): void {
   if (state.selectedObject === obj) return;
 
   applyHighlight(state.selectedObject, false);
@@ -372,39 +416,46 @@ export function selectObject(state: AppState, obj: THREE.Object3D | null): void 
     state.ui.shapeScale.value = currentScale.toFixed(2);
     state.ui.shapeScaleVal.textContent = currentScale.toFixed(2);
 
-    const bevelWidth = state.selectedObject.userData.bevelWidth ?? parseFloat(state.ui.bevelWidth.value);
+    const bevelWidth = state.selectedObject.userData.bevelWidth ??
+      parseFloat(state.ui.bevelWidth.value);
     state.ui.bevelWidth.value = bevelWidth.toFixed(2);
     state.ui.bevelWidthVal.textContent = bevelWidth.toFixed(2);
 
-    const bevelSegments = state.selectedObject.userData.bevelSegments ?? parseInt(state.ui.bevelSegments.value, 10);
+    const bevelSegments = state.selectedObject.userData.bevelSegments ??
+      parseInt(state.ui.bevelSegments.value, 10);
     state.ui.bevelSegments.value = bevelSegments.toString();
     state.ui.bevelSegmentsVal.textContent = bevelSegments.toString();
 
     if (state.selectedObject === state.baseMesh) {
-      state.ui.labelActiveTarget.textContent = 'Base Object';
-      state.ui.labelActiveTarget.style.color = '#61afef';
+      state.ui.labelActiveTarget.textContent = "Base Object";
+      state.ui.labelActiveTarget.style.color = "#61afef";
       if (state.baseMesh && state.baseMesh.userData.shapeType) {
         state.ui.shapeSelect.value = state.baseMesh.userData.shapeType;
       }
     }
     else {
-      const type = state.selectedObject.userData.shapeType || 'cube';
-      state.ui.labelActiveTarget.textContent = `Tool (${type.charAt(0).toUpperCase() + type.slice(1)})`;
-      state.ui.labelActiveTarget.style.color = '#e06c75';
+      const type = state.selectedObject.userData.shapeType || "cube";
+      state.ui.labelActiveTarget.textContent = `Tool (${
+        type.charAt(0).toUpperCase() + type.slice(1)
+      })`;
+      state.ui.labelActiveTarget.style.color = "#e06c75";
       state.ui.shapeSelect.value = type;
     }
   }
   else {
     state.transformGizmo.detach();
     state.transformSnapshot = null;
-    state.ui.gizmoHud.style.display = 'none';
-    state.ui.labelActiveTarget.textContent = 'None';
-    state.ui.labelActiveTarget.style.color = '#888888';
+    state.ui.gizmoHud.style.display = "none";
+    state.ui.labelActiveTarget.textContent = "None";
+    state.ui.labelActiveTarget.style.color = "#888888";
   }
-  updateBevelControlsAvailability(state);
+  updateUiControlsAvailability(state);
 }
 
-export function getSelectableRoot(obj: THREE.Object3D, sceneRoot: THREE.Scene): THREE.Object3D | null {
+export function getSelectableRoot(
+  obj: THREE.Object3D,
+  sceneRoot: THREE.Scene,
+): THREE.Object3D | null {
   let curr: THREE.Object3D | null = obj;
   while (curr && curr.parent && curr.parent !== sceneRoot) {
     curr = curr.parent;
@@ -429,7 +480,12 @@ export function addSecondaryShape(state: AppState): void {
   const bevelWidth = parseFloat(state.ui.bevelWidth.value);
   const bevelSegments = parseInt(state.ui.bevelSegments.value, 10);
 
-  const geom = createPrimitiveGeometry(shapeType, state.monkeyGeometry, bevelWidth, bevelSegments);
+  const geom = createPrimitiveGeometry(
+    shapeType,
+    state.monkeyGeometry,
+    bevelWidth,
+    bevelSegments,
+  );
 
   const mat = new THREE.MeshStandardMaterial({
     color: 0xe06c75,
@@ -481,70 +537,54 @@ export function cancelTransform(state: AppState): void {
 
   state.selectedObject.updateMatrixWorld(true);
   state.transformGizmo.attach(state.selectedObject);
+
+  state.ui.gizmoHud.style.display = "none";
 }
 
-export function toBlenderTransform(
-  obj: THREE.Object3D,
-  baseMesh: THREE.Object3D | null
-): { pos: THREE.Vector3; quat: THREE.Quaternion; scale: THREE.Vector3 } {
-  obj.updateMatrixWorld(true);
+export function toRelativeTransform(
+  toolObj: THREE.Object3D,
+  baseMesh: THREE.Object3D | null,
+) {
+  toolObj.updateMatrixWorld(true);
+  if (baseMesh) baseMesh.updateMatrixWorld(true);
 
-  const C = new THREE.Matrix4().set(
-    1,  0,  0,  0,
-    0,  0, -1,  0,
-    0,  1,  0,  0,
-    0,  0,  0,  1
+  const invBase = baseMesh
+    ? baseMesh.matrixWorld.clone().invert()
+    : new THREE.Matrix4();
+  const relMatrix = new THREE.Matrix4().multiplyMatrices(
+    invBase,
+    toolObj.matrixWorld,
   );
-  const CInv = new THREE.Matrix4().set(
-    1,  0,  0,  0,
-    0,  0,  1,  0,
-    0, -1,  0,  0,
-    0,  0,  0,  1
-  );
-
-  let mRel: THREE.Matrix4;
-  if (baseMesh && obj !== baseMesh) {
-    baseMesh.updateMatrixWorld(true);
-    const mBaseInv = baseMesh.matrixWorld.clone().invert();
-    mRel = mBaseInv.multiply(obj.matrixWorld);
-  }
-  else {
-    mRel = obj.matrixWorld.clone();
-  }
-
-  const mBlender = C.clone().multiply(mRel).multiply(CInv);
 
   const pos = new THREE.Vector3();
   const quat = new THREE.Quaternion();
   const scale = new THREE.Vector3();
-  mBlender.decompose(pos, quat, scale);
+  relMatrix.decompose(pos, quat, scale);
 
-  return { pos, quat, scale };
+  const euler = new THREE.Euler().setFromQuaternion(quat, "XYZ");
+  const rot = [
+    THREE.MathUtils.radToDeg(euler.x),
+    THREE.MathUtils.radToDeg(euler.y),
+    THREE.MathUtils.radToDeg(euler.z),
+  ];
+
+  return { pos, quat, rot, scale };
 }
 
 export function confirmTransform(state: AppState): void {
   if (!state.selectedObject) return;
 
+  // Capture the new confirmed position as the revert snapshot
   captureTransformSnapshot(state);
 
-  const isBase = state.selectedObject === state.baseMesh;
-  const { pos, quat, scale } = toBlenderTransform(state.selectedObject, state.baseMesh);
-
-  const payload = {
-    action: 'lock_transform',
-    target: isBase ? 'base' : 'tool',
-    position: [pos.x, pos.y, pos.z],
-    quaternion: [quat.w, quat.x, quat.y, quat.z],
-    scale: [scale.x, scale.y, scale.z],
-  };
-
-  state.socket.send(JSON.stringify(payload));
+  // Hide the floating HUD
+  state.ui.gizmoHud.style.display = "none";
 }
 
 export function updateGizmoHud(state: AppState): void {
   const target = state.transformGizmo.object ?? state.selectedObject;
   if (!target) {
-    state.ui.gizmoHud.style.display = 'none';
+    state.ui.gizmoHud.style.display = "none";
     return;
   }
 
@@ -553,9 +593,11 @@ export function updateGizmoHud(state: AppState): void {
   const worldPos = new THREE.Vector3();
   target.getWorldPosition(worldPos);
 
-  const cameraLocalPos = worldPos.clone().applyMatrix4(state.camera.matrixWorldInverse);
+  const cameraLocalPos = worldPos.clone().applyMatrix4(
+    state.camera.matrixWorldInverse,
+  );
   if (cameraLocalPos.z >= 0) {
-    state.ui.gizmoHud.style.display = 'none';
+    state.ui.gizmoHud.style.display = "none";
     return;
   }
 
@@ -563,14 +605,14 @@ export function updateGizmoHud(state: AppState): void {
   const screenX = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
   const screenY = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
 
-  state.ui.gizmoHud.style.display = 'flex';
+  state.ui.gizmoHud.style.display = "flex";
   state.ui.gizmoHud.style.left = `${Math.round(screenX + 45)}px`;
   state.ui.gizmoHud.style.top = `${Math.round(screenY - 45)}px`;
 }
 
 export function setupWebSocket(state: AppState): void {
   state.socket.onopen = () => {
-    console.log('Connected to Smoothie engine WebSocket.');
+    console.log("Connected to Smoothie engine WebSocket.");
     sendParameters(state);
   };
 
@@ -578,94 +620,93 @@ export function setupWebSocket(state: AppState): void {
     if (event.data instanceof ArrayBuffer) {
       state.loader.parse(
         event.data,
-        '',
-        (gltf: { scene: THREE.Group }) => {
-          const wasBaseSelected = state.selectedObject === state.baseMesh || state.selectedObject === null;
-          const prevPos = new THREE.Vector3();
-          const prevRot = new THREE.Euler();
-          const prevScale = new THREE.Vector3(1, 1, 1);
+        "",
+        (gltf) => {
+          // 1. Preserve existing base transform if one exists
+          const prevPos = state.baseMesh ? state.baseMesh.position.clone() : new THREE.Vector3();
+          const prevQuat = state.baseMesh ? state.baseMesh.quaternion.clone() : new THREE.Quaternion();
+          const prevScale = state.baseMesh ? state.baseMesh.scale.clone() : new THREE.Vector3(1, 1, 1);
+          const wasBaseSelected = state.selectedObject === state.baseMesh;
 
           if (state.baseMesh) {
-            prevPos.copy(state.baseMesh.position);
-            prevRot.copy(state.baseMesh.rotation);
-            prevScale.copy(state.baseMesh.scale);
             state.scene.remove(state.baseMesh);
           }
 
           state.baseMesh = gltf.scene;
-          state.baseMesh.userData.shapeType = state.currentBaseShape;
-          state.baseMesh.userData.bevelWidth = parseFloat(state.ui.bevelWidth.value);
-          state.baseMesh.userData.bevelSegments = parseInt(state.ui.bevelSegments.value, 10);
           state.baseMesh.position.copy(prevPos);
-          state.baseMesh.rotation.copy(prevRot);
+          state.baseMesh.quaternion.copy(prevQuat);
           state.baseMesh.scale.copy(prevScale);
+          state.baseMesh.updateMatrixWorld(true);
 
-          state.baseMesh.traverse((child: THREE.Object3D) => {
+          state.baseMesh.userData.shapeType = state.currentBaseShape;
+
+          state.baseMesh.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
-              (child as THREE.Mesh).material = new THREE.MeshStandardMaterial({
-                color: 0xcccccc,
-                roughness: 0.35,
-                metalness: 0.1,
-              });
+              child.castShadow = true;
+              child.receiveShadow = true;
+              child.userData.shapeType = state.currentBaseShape;
             }
           });
 
           state.scene.add(state.baseMesh);
 
-          if (wasBaseSelected || state.shapeStack.length === 0) {
-            selectObject(state, state.baseMesh);
+          // 2. Re-attach gizmo to the new base mesh if it was active
+          if (wasBaseSelected) {
+            state.selectedObject = state.baseMesh;
+            state.transformGizmo.attach(state.baseMesh);
+            captureTransformSnapshot(state);
           }
-          else {
-            selectObject(state, state.shapeStack.at(-1)!);
-          }
+
+          updateUiControlsAvailability(state);
         },
-        (err: unknown) => {
-          console.error('GLTF parsing error:', err);
-        }
+        (err) => console.error("Failed to parse GLB:", err),
       );
     }
   };
 }
 
 export function setupEventListeners(state: AppState): void {
-  state.transformGizmo.addEventListener('dragging-changed', (event: { value: boolean }) => {
-    state.orbit.enabled = !event.value;
-    state.isGizmoInteracting = event.value;
-  });
+  state.transformGizmo.addEventListener(
+    "dragging-changed",
+    (event: { value: boolean }) => {
+      state.orbit.enabled = !event.value;
+      state.isGizmoInteracting = event.value;
+    },
+  );
 
-  state.ui.hudConfirm.addEventListener('click', () => {
+  state.ui.hudConfirm.addEventListener("click", () => {
     confirmTransform(state);
   });
 
-  state.ui.hudCancel.addEventListener('click', () => {
+  state.ui.hudCancel.addEventListener("click", () => {
     cancelTransform(state);
   });
 
-  state.ui.addShapeBtn.addEventListener('click', () => {
+  state.ui.addShapeBtn.addEventListener("click", () => {
     addSecondaryShape(state);
   });
 
-  state.ui.btnTranslate.addEventListener('click', () => {
-    state.transformGizmo.setMode('translate');
+  state.ui.btnTranslate.addEventListener("click", () => {
+    state.transformGizmo.setMode("translate");
   });
 
-  state.ui.btnRotate.addEventListener('click', () => {
-    state.transformGizmo.setMode('rotate');
+  state.ui.btnRotate.addEventListener("click", () => {
+    state.transformGizmo.setMode("rotate");
   });
 
-  state.ui.btnDelete.addEventListener('click', () => {
+  state.ui.btnDelete.addEventListener("click", () => {
     deleteSelectedShape(state);
   });
 
-  state.ui.btnUnion.addEventListener('click', () => {
-    commitBoolean(state, 'UNION');
+  state.ui.btnUnion.addEventListener("click", () => {
+    commitBoolean(state, "UNION");
   });
 
-  state.ui.btnDiff.addEventListener('click', () => {
-    commitBoolean(state, 'DIFFERENCE');
+  state.ui.btnDiff.addEventListener("click", () => {
+    commitBoolean(state, "DIFFERENCE");
   });
 
-  state.ui.shapeScale.addEventListener('input', (e: Event) => {
+  state.ui.shapeScale.addEventListener("input", (e: Event) => {
     const val = parseFloat((e.target as HTMLInputElement).value);
     state.ui.shapeScaleVal.textContent = val.toFixed(2);
 
@@ -679,55 +720,65 @@ export function setupEventListeners(state: AppState): void {
     }
   });
 
-  state.ui.shapeSelect.addEventListener('change', () => {
+  state.ui.shapeSelect.addEventListener("change", () => {
     const newType = state.ui.shapeSelect.value;
     if (state.selectedObject && state.selectedObject !== state.baseMesh) {
       const target = state.selectedObject as THREE.Mesh;
-      const bevelWidth = target.userData.bevelWidth ?? parseFloat(state.ui.bevelWidth.value);
-      const bevelSegments = target.userData.bevelSegments ?? parseInt(state.ui.bevelSegments.value, 10);
+      const bevelWidth = target.userData.bevelWidth ??
+        parseFloat(state.ui.bevelWidth.value);
+      const bevelSegments = target.userData.bevelSegments ??
+        parseInt(state.ui.bevelSegments.value, 10);
 
       target.geometry.dispose();
-      target.geometry = createPrimitiveGeometry(newType, state.monkeyGeometry, bevelWidth, bevelSegments);
+      target.geometry = createPrimitiveGeometry(
+        newType,
+        state.monkeyGeometry,
+        bevelWidth,
+        bevelSegments,
+      );
       target.userData.shapeType = newType;
-      state.ui.labelActiveTarget.textContent = `Tool (${newType.charAt(0).toUpperCase() + newType.slice(1)})`;
-    } else {
+      state.ui.labelActiveTarget.textContent = `Tool (${
+        newType.charAt(0).toUpperCase() + newType.slice(1)
+      })`;
+    }
+    else {
       state.currentBaseShape = newType;
       sendParameters(state);
     }
 
-    updateBevelControlsAvailability(state);
+    updateUiControlsAvailability(state);
   });
 
-  state.ui.bevelWidth.addEventListener('input', (e: Event) => {
+  state.ui.bevelWidth.addEventListener("input", (e: Event) => {
     const target = e.target as HTMLInputElement;
     state.ui.bevelWidthVal.textContent = target.value;
     updateSelectedGeometry(state);
   });
 
-  state.ui.bevelWidth.addEventListener('change', () => {
+  state.ui.bevelWidth.addEventListener("change", () => {
     if (!state.selectedObject || state.selectedObject === state.baseMesh) {
       sendParameters(state);
     }
   });
 
-  state.ui.bevelSegments.addEventListener('input', (e: Event) => {
+  state.ui.bevelSegments.addEventListener("input", (e: Event) => {
     const target = e.target as HTMLInputElement;
     state.ui.bevelSegmentsVal.textContent = target.value;
     updateSelectedGeometry(state);
   });
 
-  state.ui.bevelSegments.addEventListener('change', () => {
+  state.ui.bevelSegments.addEventListener("change", () => {
     if (!state.selectedObject || state.selectedObject === state.baseMesh) {
       sendParameters(state);
     }
   });
 
-  self.addEventListener('pointerdown', (e: PointerEvent) => {
+  self.addEventListener("pointerdown", (e: PointerEvent) => {
     state.pointerStartX = e.clientX;
     state.pointerStartY = e.clientY;
   });
 
-  self.addEventListener('pointerup', (e: PointerEvent) => {
+  self.addEventListener("pointerup", (e: PointerEvent) => {
     if (e.target !== state.ui.canvas) return;
     if (state.isGizmoInteracting || state.transformGizmo.axis !== null) return;
 
@@ -759,17 +810,19 @@ export function setupEventListeners(state: AppState): void {
     selectObject(state, null);
   });
 
-  self.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (e.key === 'w' || e.key === 'W') state.transformGizmo.setMode('translate');
-    if (e.key === 'e' || e.key === 'E') state.transformGizmo.setMode('rotate');
-    if (e.key === 'Escape') cancelTransform(state);
-    if (e.key === 'Enter') {
+  self.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "w" || e.key === "W") {
+      state.transformGizmo.setMode("translate");
+    }
+    if (e.key === "e" || e.key === "E") state.transformGizmo.setMode("rotate");
+    if (e.key === "Escape") cancelTransform(state);
+    if (e.key === "Enter") {
       e.preventDefault();
       confirmTransform(state);
     }
   });
 
-  self.addEventListener('resize', () => {
+  self.addEventListener("resize", () => {
     state.camera.aspect = window.innerWidth / window.innerHeight;
     state.camera.updateProjectionMatrix();
     state.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -786,27 +839,33 @@ export function startRenderLoop(state: AppState): void {
   renderFrame();
 }
 
-export function commitBoolean(state: AppState, operation: 'UNION' | 'DIFFERENCE'): void {
+export function commitBoolean(
+  state: AppState,
+  operation: "UNION" | "DIFFERENCE",
+): void {
   if (state.shapeStack.length === 0) {
-    console.warn('No tool shape in stack to commit.');
+    console.warn("No tool shape in stack to commit.");
     return;
   }
 
-  const toolObj = (state.selectedObject && state.selectedObject !== state.baseMesh)
-    ? (state.selectedObject as THREE.Mesh)
-    : state.shapeStack.at(-1)!;
+  const toolObj =
+    (state.selectedObject && state.selectedObject !== state.baseMesh)
+      ? (state.selectedObject as THREE.Mesh)
+      : state.shapeStack.at(-1)!;
 
-  const { pos, quat, scale } = toBlenderTransform(toolObj, state.baseMesh);
+  const { pos, rot, scale } = toRelativeTransform(toolObj, state.baseMesh);
 
-  const bevelWidth = toolObj.userData.bevelWidth ?? parseFloat(state.ui.bevelWidth.value);
-  const bevelSegments = toolObj.userData.bevelSegments ?? parseInt(state.ui.bevelSegments.value, 10);
+  const bevelWidth = toolObj.userData.bevelWidth ??
+    parseFloat(state.ui.bevelWidth.value);
+  const bevelSegments = toolObj.userData.bevelSegments ??
+    parseInt(state.ui.bevelSegments.value, 10);
 
   const payload = {
-    action: 'boolean',
+    action: "boolean",
     operation,
-    tool_type: toolObj.userData.shapeType || 'cube',
+    tool_type: toolObj.userData.shapeType || "cube",
     position: [pos.x, pos.y, pos.z],
-    quaternion: [quat.w, quat.x, quat.y, quat.z],
+    rotation: rot, // [rx, ry, rz] in degrees
     scale: [scale.x, scale.y, scale.z],
     bevel_width: bevelWidth,
     bevel_segments: bevelSegments,
@@ -823,33 +882,51 @@ export function commitBoolean(state: AppState, operation: 'UNION' | 'DIFFERENCE'
   }
 
   state.selectedObject = null;
-  state.ui.gizmoHud.style.display = 'none';
+  state.ui.gizmoHud.style.display = "none";
 }
 
-export function updateBevelControlsAvailability(state: AppState): void {
-  let isMonkey = false;
+export function updateUiControlsAvailability(state: AppState): void {
+  // Check dropdown, current base shape tracker, and userData
+  const dropdownIsMonkey = state.ui.shapeSelect.value === "monkey";
+  const baseIsMonkey = state.currentBaseShape === "monkey";
 
+  // Check if selected object is or belongs to the monkey
+  let selectedIsMonkey = false;
   if (state.selectedObject) {
-    if (state.selectedObject === state.baseMesh) {
-      isMonkey = state.currentBaseShape === 'monkey';
-    }
-    else {
-      isMonkey = state.selectedObject.userData.shapeType === 'monkey';
-    }
-  }
-  else {
-    // When nothing is selected, default to checking the base shape selection
-    isMonkey = state.ui.shapeSelect.value === 'monkey';
+    selectedIsMonkey = state.selectedObject.userData.shapeType === "monkey" ||
+      (state.baseMesh != null &&
+        (state.selectedObject === state.baseMesh ||
+          state.baseMesh.getObjectById(state.selectedObject.id) != null) &&
+        baseIsMonkey);
   }
 
-  state.ui.bevelWidth.disabled = isMonkey;
-  state.ui.bevelSegments.disabled = isMonkey;
+  const isMonkeyActive = dropdownIsMonkey || baseIsMonkey || selectedIsMonkey;
+  const disableBooleans = isMonkeyActive || state.shapeStack.length === 0;
 
-  const opacity = isMonkey ? '0.35' : '1.0';
-  const cursor = isMonkey ? 'not-allowed' : 'auto';
+  // 1. Bevel Sliders
+  state.ui.bevelWidth.disabled = isMonkeyActive;
+  state.ui.bevelSegments.disabled = isMonkeyActive;
 
-  state.ui.bevelWidth.style.opacity = opacity;
-  state.ui.bevelWidth.style.cursor = cursor;
-  state.ui.bevelSegments.style.opacity = opacity;
-  state.ui.bevelSegments.style.cursor = cursor;
+  const bevelOpacity = isMonkeyActive ? "0.35" : "1.0";
+  const bevelCursor = isMonkeyActive ? "not-allowed" : "auto";
+
+  state.ui.bevelWidth.style.opacity = bevelOpacity;
+  state.ui.bevelWidth.style.cursor = bevelCursor;
+  state.ui.bevelSegments.style.opacity = bevelOpacity;
+  state.ui.bevelSegments.style.cursor = bevelCursor;
+
+  // 2. Boolean Action Buttons (btnUnion & btnDiff)
+  const booleanOpacity = disableBooleans ? "0.35" : "1.0";
+  const booleanCursor = disableBooleans ? "not-allowed" : "pointer";
+  const pointerEvents = disableBooleans ? "none" : "auto";
+
+  state.ui.btnUnion.disabled = disableBooleans;
+  state.ui.btnUnion.style.opacity = booleanOpacity;
+  state.ui.btnUnion.style.cursor = booleanCursor;
+  state.ui.btnUnion.style.pointerEvents = pointerEvents;
+
+  state.ui.btnDiff.disabled = disableBooleans;
+  state.ui.btnDiff.style.opacity = booleanOpacity;
+  state.ui.btnDiff.style.cursor = booleanCursor;
+  state.ui.btnDiff.style.pointerEvents = pointerEvents;
 }

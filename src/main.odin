@@ -7,6 +7,17 @@ import "core:strings"
 import "core:sync"
 import "core:thread"
 
+Boolean_Payload :: struct {
+	action:         string,
+	operation:      string,
+	tool_type:      string,
+	position:       [3]f64,
+	rotation:       [3]f64, // [rx, ry, rz] in degrees
+	scale:          [3]f64,
+	bevel_width:    f32,
+	bevel_segments: int,
+}
+
 Base_Params :: struct {
 	shape:          string,
 	scale:          f32,
@@ -14,18 +25,8 @@ Base_Params :: struct {
 	bevel_segments: int,
 }
 
-Boolean_Payload :: struct {
-	action:         string,
-	operation:      string,
-	tool_type:      string,
-	position:       [3]f64,
-	quaternion:     [4]f64,
-	scale:          [3]f64,
-	bevel_width:    f32,
-	bevel_segments: int,
-}
-
 MONKEY_GLB :: #load("monkey.glb")
+MONKEY_STL :: #load("monkey.stl")
 
 // Shared export caches and mutex
 cache_mutex: sync.Mutex
@@ -100,6 +101,7 @@ ws_session_proc :: proc(data: rawptr) {
 		if err := json.unmarshal(frame.payload, &bool_cmd);
 		   err == nil && bool_cmd.action == "boolean" {
 			if current_base != nil {
+				// Create base tool primitive
 				tool := create_solid(
 					bool_cmd.tool_type,
 					f32(bool_cmd.scale.x),
@@ -107,13 +109,23 @@ ws_session_proc :: proc(data: rawptr) {
 					bool_cmd.bevel_segments,
 				)
 
-				translated_tool := translate(
+				// Rotate around its own center first
+				rotated_tool := rotate(
 					tool,
+					bool_cmd.rotation.x,
+					bool_cmd.rotation.y,
+					bool_cmd.rotation.z,
+				)
+				destroy(tool)
+
+				// Translate to relative target position
+				placed_tool := translate(
+					rotated_tool,
 					bool_cmd.position.x,
 					bool_cmd.position.y,
 					bool_cmd.position.z,
 				)
-				destroy(tool)
+				destroy(rotated_tool)
 
 				op: OpType = .Add
 				if bool_cmd.operation == "DIFFERENCE" {
@@ -123,15 +135,16 @@ ws_session_proc :: proc(data: rawptr) {
 					op = .Intersect
 				}
 
-				new_base := boolean_op(current_base, translated_tool, op)
+				new_base := boolean_op(current_base, placed_tool, op)
 				destroy(current_base)
-				destroy(translated_tool)
+				destroy(placed_tool)
 				current_base = new_base
 			}
 		}
 		else {
 			params: Base_Params
-			if p_err := json.unmarshal(frame.payload, &params); p_err == nil {
+			if p_err := json.unmarshal(frame.payload, &params);
+			   p_err == nil && len(params.shape) > 0 {
 				if params.shape == "monkey" {
 					if current_base != nil {
 						destroy(current_base)
@@ -141,7 +154,9 @@ ws_session_proc :: proc(data: rawptr) {
 					sync.mutex_lock(&cache_mutex)
 					clear(&latest_glb)
 					append(&latest_glb, ..MONKEY_GLB)
-					clear(&latest_stl) // Clear STL if monkey is not converted
+
+					clear(&latest_stl)
+					append(&latest_stl, ..MONKEY_STL)
 					sync.mutex_unlock(&cache_mutex)
 
 					send_binary_frame(client.sock, MONKEY_GLB)
@@ -215,7 +230,7 @@ main :: proc() {
 		}
 		defer destroy_request(&req)
 
-		// 1. WebSocket Route -> Hand off to thread immediately
+		// WebSocket Route -> Hand off to thread immediately
 		if req.is_websocket {
 			sec_key, has_key := req.headers["sec-websocket-key"]
 			if has_key {
@@ -229,7 +244,7 @@ main :: proc() {
 			continue
 		}
 
-		// 2. HTTP Routes -> Handled synchronously without stalling the main loop
+		// HTTP Routes -> Handled synchronously without stalling the main loop
 		switch req.path {
 		case "/":
 			serve_file(client_sock, "src/index.html")

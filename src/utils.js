@@ -67,7 +67,7 @@ export function createAppState() {
     transformSnapshot: null,
     hudScreenVector: new THREE.Vector3()
   };
-  updateBevelControlsAvailability(state);
+  updateUiControlsAvailability(state);
   return state;
 }
 export function initMonkeyCache(state) {
@@ -267,7 +267,7 @@ export function selectObject(state, obj) {
     state.ui.labelActiveTarget.textContent = "None";
     state.ui.labelActiveTarget.style.color = "#888888";
   }
-  updateBevelControlsAvailability(state);
+  updateUiControlsAvailability(state);
 }
 export function getSelectableRoot(obj, sceneRoot) {
   let curr = obj;
@@ -333,40 +333,31 @@ export function cancelTransform(state) {
   state.ui.shapeScaleVal.textContent = state.selectedObject.scale.x.toFixed(2);
   state.selectedObject.updateMatrixWorld(true);
   state.transformGizmo.attach(state.selectedObject);
+  state.ui.gizmoHud.style.display = "none";
 }
-export function toBlenderTransform(obj, baseMesh) {
-  obj.updateMatrixWorld(true);
-  const C = new THREE.Matrix4().set(1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1);
-  const CInv = new THREE.Matrix4().set(1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1);
-  let mRel;
-  if (baseMesh && obj !== baseMesh) {
+export function toRelativeTransform(toolObj, baseMesh) {
+  toolObj.updateMatrixWorld(true);
+  if (baseMesh)
     baseMesh.updateMatrixWorld(true);
-    const mBaseInv = baseMesh.matrixWorld.clone().invert();
-    mRel = mBaseInv.multiply(obj.matrixWorld);
-  } else {
-    mRel = obj.matrixWorld.clone();
-  }
-  const mBlender = C.clone().multiply(mRel).multiply(CInv);
+  const invBase = baseMesh ? baseMesh.matrixWorld.clone().invert() : new THREE.Matrix4();
+  const relMatrix = new THREE.Matrix4().multiplyMatrices(invBase, toolObj.matrixWorld);
   const pos = new THREE.Vector3();
   const quat = new THREE.Quaternion();
   const scale = new THREE.Vector3();
-  mBlender.decompose(pos, quat, scale);
-  return { pos, quat, scale };
+  relMatrix.decompose(pos, quat, scale);
+  const euler = new THREE.Euler().setFromQuaternion(quat, "XYZ");
+  const rot = [
+    THREE.MathUtils.radToDeg(euler.x),
+    THREE.MathUtils.radToDeg(euler.y),
+    THREE.MathUtils.radToDeg(euler.z)
+  ];
+  return { pos, quat, rot, scale };
 }
 export function confirmTransform(state) {
   if (!state.selectedObject)
     return;
   captureTransformSnapshot(state);
-  const isBase = state.selectedObject === state.baseMesh;
-  const { pos, quat, scale } = toBlenderTransform(state.selectedObject, state.baseMesh);
-  const payload = {
-    action: "lock_transform",
-    target: isBase ? "base" : "tool",
-    position: [pos.x, pos.y, pos.z],
-    quaternion: [quat.w, quat.x, quat.y, quat.z],
-    scale: [scale.x, scale.y, scale.z]
-  };
-  state.socket.send(JSON.stringify(payload));
+  state.ui.gizmoHud.style.display = "none";
 }
 export function updateGizmoHud(state) {
   const target = state.transformGizmo.object ?? state.selectedObject;
@@ -397,41 +388,34 @@ export function setupWebSocket(state) {
   state.socket.onmessage = (event) => {
     if (event.data instanceof ArrayBuffer) {
       state.loader.parse(event.data, "", (gltf) => {
-        const wasBaseSelected = state.selectedObject === state.baseMesh || state.selectedObject === null;
-        const prevPos = new THREE.Vector3();
-        const prevRot = new THREE.Euler();
-        const prevScale = new THREE.Vector3(1, 1, 1);
+        const prevPos = state.baseMesh ? state.baseMesh.position.clone() : new THREE.Vector3();
+        const prevQuat = state.baseMesh ? state.baseMesh.quaternion.clone() : new THREE.Quaternion();
+        const prevScale = state.baseMesh ? state.baseMesh.scale.clone() : new THREE.Vector3(1, 1, 1);
+        const wasBaseSelected = state.selectedObject === state.baseMesh;
         if (state.baseMesh) {
-          prevPos.copy(state.baseMesh.position);
-          prevRot.copy(state.baseMesh.rotation);
-          prevScale.copy(state.baseMesh.scale);
           state.scene.remove(state.baseMesh);
         }
         state.baseMesh = gltf.scene;
-        state.baseMesh.userData.shapeType = state.currentBaseShape;
-        state.baseMesh.userData.bevelWidth = parseFloat(state.ui.bevelWidth.value);
-        state.baseMesh.userData.bevelSegments = parseInt(state.ui.bevelSegments.value, 10);
         state.baseMesh.position.copy(prevPos);
-        state.baseMesh.rotation.copy(prevRot);
+        state.baseMesh.quaternion.copy(prevQuat);
         state.baseMesh.scale.copy(prevScale);
+        state.baseMesh.updateMatrixWorld(true);
+        state.baseMesh.userData.shapeType = state.currentBaseShape;
         state.baseMesh.traverse((child) => {
           if (child.isMesh) {
-            child.material = new THREE.MeshStandardMaterial({
-              color: 13421772,
-              roughness: 0.35,
-              metalness: 0.1
-            });
+            child.castShadow = true;
+            child.receiveShadow = true;
+            child.userData.shapeType = state.currentBaseShape;
           }
         });
         state.scene.add(state.baseMesh);
-        if (wasBaseSelected || state.shapeStack.length === 0) {
-          selectObject(state, state.baseMesh);
-        } else {
-          selectObject(state, state.shapeStack.at(-1));
+        if (wasBaseSelected) {
+          state.selectedObject = state.baseMesh;
+          state.transformGizmo.attach(state.baseMesh);
+          captureTransformSnapshot(state);
         }
-      }, (err) => {
-        console.error("GLTF parsing error:", err);
-      });
+        updateUiControlsAvailability(state);
+      }, (err) => console.error("Failed to parse GLB:", err));
     }
   };
 }
@@ -489,7 +473,7 @@ export function setupEventListeners(state) {
       state.currentBaseShape = newType;
       sendParameters(state);
     }
-    updateBevelControlsAvailability(state);
+    updateUiControlsAvailability(state);
   });
   state.ui.bevelWidth.addEventListener("input", (e) => {
     const target = e.target;
@@ -544,8 +528,9 @@ export function setupEventListeners(state) {
     selectObject(state, null);
   });
   self.addEventListener("keydown", (e) => {
-    if (e.key === "w" || e.key === "W")
+    if (e.key === "w" || e.key === "W") {
       state.transformGizmo.setMode("translate");
+    }
     if (e.key === "e" || e.key === "E")
       state.transformGizmo.setMode("rotate");
     if (e.key === "Escape")
@@ -576,7 +561,7 @@ export function commitBoolean(state, operation) {
     return;
   }
   const toolObj = state.selectedObject && state.selectedObject !== state.baseMesh ? state.selectedObject : state.shapeStack.at(-1);
-  const { pos, quat, scale } = toBlenderTransform(toolObj, state.baseMesh);
+  const { pos, rot, scale } = toRelativeTransform(toolObj, state.baseMesh);
   const bevelWidth = toolObj.userData.bevelWidth ?? parseFloat(state.ui.bevelWidth.value);
   const bevelSegments = toolObj.userData.bevelSegments ?? parseInt(state.ui.bevelSegments.value, 10);
   const payload = {
@@ -584,7 +569,7 @@ export function commitBoolean(state, operation) {
     operation,
     tool_type: toolObj.userData.shapeType || "cube",
     position: [pos.x, pos.y, pos.z],
-    quaternion: [quat.w, quat.x, quat.y, quat.z],
+    rotation: rot,
     scale: [scale.x, scale.y, scale.z],
     bevel_width: bevelWidth,
     bevel_segments: bevelSegments
@@ -599,23 +584,32 @@ export function commitBoolean(state, operation) {
   state.selectedObject = null;
   state.ui.gizmoHud.style.display = "none";
 }
-export function updateBevelControlsAvailability(state) {
-  let isMonkey = false;
+export function updateUiControlsAvailability(state) {
+  const dropdownIsMonkey = state.ui.shapeSelect.value === "monkey";
+  const baseIsMonkey = state.currentBaseShape === "monkey";
+  let selectedIsMonkey = false;
   if (state.selectedObject) {
-    if (state.selectedObject === state.baseMesh) {
-      isMonkey = state.currentBaseShape === "monkey";
-    } else {
-      isMonkey = state.selectedObject.userData.shapeType === "monkey";
-    }
-  } else {
-    isMonkey = state.ui.shapeSelect.value === "monkey";
+    selectedIsMonkey = state.selectedObject.userData.shapeType === "monkey" || state.baseMesh != null && (state.selectedObject === state.baseMesh || state.baseMesh.getObjectById(state.selectedObject.id) != null) && baseIsMonkey;
   }
-  state.ui.bevelWidth.disabled = isMonkey;
-  state.ui.bevelSegments.disabled = isMonkey;
-  const opacity = isMonkey ? "0.35" : "1.0";
-  const cursor = isMonkey ? "not-allowed" : "auto";
-  state.ui.bevelWidth.style.opacity = opacity;
-  state.ui.bevelWidth.style.cursor = cursor;
-  state.ui.bevelSegments.style.opacity = opacity;
-  state.ui.bevelSegments.style.cursor = cursor;
+  const isMonkeyActive = dropdownIsMonkey || baseIsMonkey || selectedIsMonkey;
+  const disableBooleans = isMonkeyActive || state.shapeStack.length === 0;
+  state.ui.bevelWidth.disabled = isMonkeyActive;
+  state.ui.bevelSegments.disabled = isMonkeyActive;
+  const bevelOpacity = isMonkeyActive ? "0.35" : "1.0";
+  const bevelCursor = isMonkeyActive ? "not-allowed" : "auto";
+  state.ui.bevelWidth.style.opacity = bevelOpacity;
+  state.ui.bevelWidth.style.cursor = bevelCursor;
+  state.ui.bevelSegments.style.opacity = bevelOpacity;
+  state.ui.bevelSegments.style.cursor = bevelCursor;
+  const booleanOpacity = disableBooleans ? "0.35" : "1.0";
+  const booleanCursor = disableBooleans ? "not-allowed" : "pointer";
+  const pointerEvents = disableBooleans ? "none" : "auto";
+  state.ui.btnUnion.disabled = disableBooleans;
+  state.ui.btnUnion.style.opacity = booleanOpacity;
+  state.ui.btnUnion.style.cursor = booleanCursor;
+  state.ui.btnUnion.style.pointerEvents = pointerEvents;
+  state.ui.btnDiff.disabled = disableBooleans;
+  state.ui.btnDiff.style.opacity = booleanOpacity;
+  state.ui.btnDiff.style.cursor = booleanCursor;
+  state.ui.btnDiff.style.pointerEvents = pointerEvents;
 }

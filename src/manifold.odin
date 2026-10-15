@@ -362,70 +362,75 @@ beveled_cylinder :: proc(
 	return rotated
 }
 
-beveled_cone :: proc(height, radius: f32, bevel_width: f32, bevel_segments: int, center: bool = true) -> ManifoldHandle {
-    h := f64(height)
-    r := f64(radius)
-    segs := max(16, bevel_segments * 8)
+beveled_cone :: proc(
+	height, radius: f32,
+	bevel_width: f32,
+	bevel_segments: int,
+	center: bool = true,
+) -> ManifoldHandle {
+	h := f64(height)
+	r := f64(radius)
+	segs := max(16, bevel_segments * 8)
 
-    max_b := min(r - 0.01, h * 0.5 - 0.01)
-    b := clamp(f64(bevel_width), 0.0, max_b)
+	max_b := min(r - 0.01, h * 0.5 - 0.01)
+	b := clamp(f64(bevel_width), 0.0, max_b)
 
-    if b <= 0.001 {
-        return cone(height, radius, segments = segs, center = center)
-    }
+	if b <= 0.001 {
+		return cone(height, radius, segments = segs, center = center)
+	}
 
-    z_bottom := -h * 0.5
-    n_steps := max(1, bevel_segments)
+	z_bottom := -h * 0.5
+	n_steps := max(1, bevel_segments)
 
-    // Cone body starting seamlessly at radius r from z_bottom + b up to the apex (radius 0)
-    body := raw_frustum(f32(h - b), f32(r), 0.0, segments = segs, center = false)
-    res := translate(body, 0, 0, z_bottom + b)
-    destroy(body)
+	// Cone body starting seamlessly at radius r from z_bottom + b up to the apex (radius 0)
+	body := raw_frustum(f32(h - b), f32(r), 0.0, segments = segs, center = false)
+	res := translate(body, 0, 0, z_bottom + b)
+	destroy(body)
 
-    // Inner base cylinder to seal the bottom interior disk (radius r - b)
-    inner_base := raw_cylinder(f32(b), f32(r - b), segments = segs, center = false)
-    base_placed := translate(inner_base, 0, 0, z_bottom)
-    destroy(inner_base)
+	// Inner base cylinder to seal the bottom interior disk (radius r - b)
+	inner_base := raw_cylinder(f32(b), f32(r - b), segments = segs, center = false)
+	base_placed := translate(inner_base, 0, 0, z_bottom)
+	destroy(inner_base)
 
-    res2 := boolean_op(res, base_placed, .Add)
-    destroy(res)
-    destroy(base_placed)
-    res = res2
+	res2 := boolean_op(res, base_placed, .Add)
+	destroy(res)
+	destroy(base_placed)
+	res = res2
 
-    // Rounding slices for the bottom rim
-    for i in 0 ..< n_steps {
-        t0 := (f64(i) / f64(n_steps)) * (math.PI * 0.5)
-        t1 := (f64(i + 1) / f64(n_steps)) * (math.PI * 0.5)
+	// Rounding slices for the bottom rim
+	for i in 0 ..< n_steps {
+		t0 := (f64(i) / f64(n_steps)) * (math.PI * 0.5)
+		t1 := (f64(i + 1) / f64(n_steps)) * (math.PI * 0.5)
 
-        r0 := (r - b) + b * math.sin(t0)
-        r1 := (r - b) + b * math.sin(t1)
+		r0 := (r - b) + b * math.sin(t0)
+		r1 := (r - b) + b * math.sin(t1)
 
-        z0 := (z_bottom + b) - b * math.cos(t0)
-        z1 := (z_bottom + b) - b * math.cos(t1)
+		z0 := (z_bottom + b) - b * math.cos(t0)
+		z1 := (z_bottom + b) - b * math.cos(t1)
 
-        slice_h := z1 - z0
-        if slice_h <= 1e-5 do continue
+		slice_h := z1 - z0
+		if slice_h <= 1e-5 do continue
 
-        slice := raw_frustum(f32(slice_h), f32(r0), f32(r1), segments = segs, center = false)
-        slice_placed := translate(slice, 0, 0, z0)
-        destroy(slice)
+		slice := raw_frustum(f32(slice_h), f32(r0), f32(r1), segments = segs, center = false)
+		slice_placed := translate(slice, 0, 0, z0)
+		destroy(slice)
 
-        res2 = boolean_op(res, slice_placed, .Add)
-        destroy(res)
-        destroy(slice_placed)
-        res = res2
-    }
+		res2 = boolean_op(res, slice_placed, .Add)
+		destroy(res)
+		destroy(slice_placed)
+		res = res2
+	}
 
-    if !center {
-        offset := translate(res, 0, 0, h * 0.5)
-        destroy(res)
-        res = offset
-    }
+	if !center {
+		offset := translate(res, 0, 0, h * 0.5)
+		destroy(res)
+		res = offset
+	}
 
-    // Orient upright in Three.js (Y-up)
-    rotated := rotate(res, -90, 0, 0)
-    destroy(res)
-    return rotated
+	// Orient upright in Three.js (Y-up)
+	rotated := rotate(res, -90, 0, 0)
+	destroy(res)
+	return rotated
 }
 
 
