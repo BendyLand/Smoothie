@@ -26,7 +26,7 @@ parse_request :: proc(raw: string) -> (req: Request, ok: bool) {
 	lines := strings.split(raw, "\r\n")
 	if len(lines) == 0 do return req, false
 
-	// 1. Request Line: "METHOD /path HTTP/1.1"
+	// Request Line: "METHOD /path HTTP/1.1"
 	parts := strings.fields(lines[0])
 	if len(parts) < 2 do return req, false
 
@@ -43,7 +43,7 @@ parse_request :: proc(raw: string) -> (req: Request, ok: bool) {
 
 	req.path = parts[1]
 
-	// 2. Parse Headers
+	// Parse Headers
 	for i in 1 ..< len(lines) {
 		line := lines[i]
 		if len(line) == 0 do break // Reached empty line before body

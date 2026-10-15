@@ -45,7 +45,7 @@ export function createAppState() {
     hudConfirm: document.getElementById("hud-confirm"),
     hudCancel: document.getElementById("hud-cancel")
   };
-  return {
+  const state = {
     ui,
     renderer,
     scene,
@@ -67,6 +67,8 @@ export function createAppState() {
     transformSnapshot: null,
     hudScreenVector: new THREE.Vector3()
   };
+  updateBevelControlsAvailability(state);
+  return state;
 }
 export function initMonkeyCache(state) {
   state.loader.load("./monkey.glb", (gltf) => {
@@ -265,6 +267,7 @@ export function selectObject(state, obj) {
     state.ui.labelActiveTarget.textContent = "None";
     state.ui.labelActiveTarget.style.color = "#888888";
   }
+  updateBevelControlsAvailability(state);
 }
 export function getSelectableRoot(obj, sceneRoot) {
   let curr = obj;
@@ -486,6 +489,7 @@ export function setupEventListeners(state) {
       state.currentBaseShape = newType;
       sendParameters(state);
     }
+    updateBevelControlsAvailability(state);
   });
   state.ui.bevelWidth.addEventListener("input", (e) => {
     const target = e.target;
@@ -594,4 +598,24 @@ export function commitBoolean(state, operation) {
   }
   state.selectedObject = null;
   state.ui.gizmoHud.style.display = "none";
+}
+export function updateBevelControlsAvailability(state) {
+  let isMonkey = false;
+  if (state.selectedObject) {
+    if (state.selectedObject === state.baseMesh) {
+      isMonkey = state.currentBaseShape === "monkey";
+    } else {
+      isMonkey = state.selectedObject.userData.shapeType === "monkey";
+    }
+  } else {
+    isMonkey = state.ui.shapeSelect.value === "monkey";
+  }
+  state.ui.bevelWidth.disabled = isMonkey;
+  state.ui.bevelSegments.disabled = isMonkey;
+  const opacity = isMonkey ? "0.35" : "1.0";
+  const cursor = isMonkey ? "not-allowed" : "auto";
+  state.ui.bevelWidth.style.opacity = opacity;
+  state.ui.bevelWidth.style.cursor = cursor;
+  state.ui.bevelSegments.style.opacity = opacity;
+  state.ui.bevelSegments.style.cursor = cursor;
 }

@@ -105,8 +105,7 @@ export function createAppState(): AppState {
     hudConfirm: document.getElementById('hud-confirm') as HTMLButtonElement,
     hudCancel: document.getElementById('hud-cancel') as HTMLButtonElement,
   };
-
-  return {
+  const state: AppState = {
     ui,
     renderer,
     scene,
@@ -128,6 +127,8 @@ export function createAppState(): AppState {
     transformSnapshot: null,
     hudScreenVector: new THREE.Vector3(),
   };
+  updateBevelControlsAvailability(state);
+  return state;
 }
 
 export function initMonkeyCache(state: AppState): void {
@@ -286,9 +287,11 @@ export function createPrimitiveGeometry(
 ): THREE.BufferGeometry {
   if (type === 'cylinder') {
     return createBeveledCylinderGeometry(0.75, 1.5, bevelWidth, bevelSegments);
-  } else if (type === 'cone') {
+  }
+  else if (type === 'cone') {
     return createBeveledConeGeometry(0.75, 1.5, bevelWidth, bevelSegments);
-  } else if (type === 'monkey') {
+  }
+  else if (type === 'monkey') {
     if (monkeyGeometry) {
       return monkeyGeometry.clone();
     }
@@ -337,7 +340,8 @@ export function updateSelectedGeometry(state: AppState): void {
     const oldGeom = mesh.geometry;
     mesh.geometry = createPrimitiveGeometry(shapeType, state.monkeyGeometry, bevelWidth, bevelSegments);
     oldGeom.dispose();
-  } else if (state.selectedObject === state.baseMesh && state.baseMesh) {
+  }
+  else if (state.selectedObject === state.baseMesh && state.baseMesh) {
     const shapeType = (state.baseMesh.userData.shapeType as string) || state.currentBaseShape || 'cube';
     state.baseMesh.userData.bevelWidth = bevelWidth;
     state.baseMesh.userData.bevelSegments = bevelSegments;
@@ -382,19 +386,22 @@ export function selectObject(state: AppState, obj: THREE.Object3D | null): void 
       if (state.baseMesh && state.baseMesh.userData.shapeType) {
         state.ui.shapeSelect.value = state.baseMesh.userData.shapeType;
       }
-    } else {
+    }
+    else {
       const type = state.selectedObject.userData.shapeType || 'cube';
       state.ui.labelActiveTarget.textContent = `Tool (${type.charAt(0).toUpperCase() + type.slice(1)})`;
       state.ui.labelActiveTarget.style.color = '#e06c75';
       state.ui.shapeSelect.value = type;
     }
-  } else {
+  }
+  else {
     state.transformGizmo.detach();
     state.transformSnapshot = null;
     state.ui.gizmoHud.style.display = 'none';
     state.ui.labelActiveTarget.textContent = 'None';
     state.ui.labelActiveTarget.style.color = '#888888';
   }
+  updateBevelControlsAvailability(state);
 }
 
 export function getSelectableRoot(obj: THREE.Object3D, sceneRoot: THREE.Scene): THREE.Object3D | null {
@@ -456,7 +463,8 @@ export function deleteSelectedShape(state: AppState): void {
 
   if (state.shapeStack.length > 0) {
     selectObject(state, state.shapeStack.at(-1)!);
-  } else {
+  }
+  else {
     selectObject(state, state.baseMesh);
   }
 }
@@ -499,7 +507,8 @@ export function toBlenderTransform(
     baseMesh.updateMatrixWorld(true);
     const mBaseInv = baseMesh.matrixWorld.clone().invert();
     mRel = mBaseInv.multiply(obj.matrixWorld);
-  } else {
+  }
+  else {
     mRel = obj.matrixWorld.clone();
   }
 
@@ -605,7 +614,8 @@ export function setupWebSocket(state: AppState): void {
 
           if (wasBaseSelected || state.shapeStack.length === 0) {
             selectObject(state, state.baseMesh);
-          } else {
+          }
+          else {
             selectObject(state, state.shapeStack.at(-1)!);
           }
         },
@@ -684,6 +694,8 @@ export function setupEventListeners(state: AppState): void {
       state.currentBaseShape = newType;
       sendParameters(state);
     }
+
+    updateBevelControlsAvailability(state);
   });
 
   state.ui.bevelWidth.addEventListener('input', (e: Event) => {
@@ -812,4 +824,32 @@ export function commitBoolean(state: AppState, operation: 'UNION' | 'DIFFERENCE'
 
   state.selectedObject = null;
   state.ui.gizmoHud.style.display = 'none';
+}
+
+export function updateBevelControlsAvailability(state: AppState): void {
+  let isMonkey = false;
+
+  if (state.selectedObject) {
+    if (state.selectedObject === state.baseMesh) {
+      isMonkey = state.currentBaseShape === 'monkey';
+    }
+    else {
+      isMonkey = state.selectedObject.userData.shapeType === 'monkey';
+    }
+  }
+  else {
+    // When nothing is selected, default to checking the base shape selection
+    isMonkey = state.ui.shapeSelect.value === 'monkey';
+  }
+
+  state.ui.bevelWidth.disabled = isMonkey;
+  state.ui.bevelSegments.disabled = isMonkey;
+
+  const opacity = isMonkey ? '0.35' : '1.0';
+  const cursor = isMonkey ? 'not-allowed' : 'auto';
+
+  state.ui.bevelWidth.style.opacity = opacity;
+  state.ui.bevelWidth.style.cursor = cursor;
+  state.ui.bevelSegments.style.opacity = opacity;
+  state.ui.bevelSegments.style.cursor = cursor;
 }

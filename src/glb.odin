@@ -6,7 +6,7 @@ import "core:mem"
 
 pack_mesh_to_glb :: proc(mesh: MeshGL_Data) -> []u8 {
 	pos_bytes := mem.slice_to_bytes(mesh.properties) // [x, y, z] floats
-	idx_bytes := mem.slice_to_bytes(mesh.indices)    // [i0, i1, i2] u32s
+	idx_bytes := mem.slice_to_bytes(mesh.indices) // [i0, i1, i2] u32s
 
 	pos_len := len(pos_bytes)
 	idx_len := len(idx_bytes)
@@ -58,16 +58,16 @@ pack_mesh_to_glb :: proc(mesh: MeshGL_Data) -> []u8 {
 	total_glb_len := 12 + 8 + json_chunk_len + 8 + bin_len
 	out := make([]u8, total_glb_len)
 
-	// 1. GLB 12-byte Header
+	// GLB 12-byte Header
 	endian.unchecked_put_u32le(out[0:4], 0x46546C67) // 'glTF'
-	endian.unchecked_put_u32le(out[4:8], 2)          // version 2
+	endian.unchecked_put_u32le(out[4:8], 2) // version 2
 	endian.unchecked_put_u32le(out[8:12], u32(total_glb_len))
 
 	cursor := 12
 
-	// 2. Chunk 0: JSON
-	endian.unchecked_put_u32le(out[cursor : cursor + 4], u32(json_chunk_len))
-	endian.unchecked_put_u32le(out[cursor + 4 : cursor + 8], 0x4E4F534A) // 'JSON'
+	// Chunk 0: JSON
+	endian.unchecked_put_u32le(out[cursor:cursor + 4], u32(json_chunk_len))
+	endian.unchecked_put_u32le(out[cursor + 4:cursor + 8], 0x4E4F534A) // 'JSON'
 	cursor += 8
 	copy(out[cursor:], json_bytes)
 	cursor += len(json_bytes)
@@ -76,9 +76,9 @@ pack_mesh_to_glb :: proc(mesh: MeshGL_Data) -> []u8 {
 		cursor += 1
 	}
 
-	// 3. Chunk 1: BIN
-	endian.unchecked_put_u32le(out[cursor : cursor + 4], u32(bin_len))
-	endian.unchecked_put_u32le(out[cursor + 4 : cursor + 8], 0x004E4942) // 'BIN\0'
+	// Chunk 1: BIN
+	endian.unchecked_put_u32le(out[cursor:cursor + 4], u32(bin_len))
+	endian.unchecked_put_u32le(out[cursor + 4:cursor + 8], 0x004E4942) // 'BIN\0'
 	cursor += 8
 
 	// Indices
@@ -93,3 +93,5 @@ pack_mesh_to_glb :: proc(mesh: MeshGL_Data) -> []u8 {
 
 	return out
 }
+
+
