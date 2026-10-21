@@ -68,8 +68,8 @@
     </div>
 
     <div class="control-row">
-      <a href="/export/glb" download><button type="button">Download .glb</button></a>
-      <a href="/export/stl" download><button type="button">Download .stl</button></a>
+      <button id="btn-export-glb" type="button">Download .glb</button>
+      <button id="btn-export-stl" type="button">Download .stl</button>
     </div>
   </div>
 
@@ -79,7 +79,7 @@
   </div>
 
   <canvas id="viewport"></canvas>
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./bundle.js"></script>
   <div id="scale-indicator" style="
     position: absolute;
     bottom: 20px;

@@ -1,6 +1,11 @@
 {
+  "tasks": {
+    "dev": "deno run --allow-net --allow-read serve.ts",
+    "build": "deno run -A build.ts --minify",
+    "compile": "deno run -A build.ts"
+  },
   "compilerOptions": {
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": ["deno.ns", "dom", "dom.iterable", "esnext"],
     "noImplicitAny": false
   },
   "lint": {
@@ -9,9 +14,14 @@
     }
   },
   "imports": {
-    "three": "npm:three@^0.160.0",
-    "three/addons/OrbitControls.js": "npm:three@^0.160.0/examples/jsm/controls/OrbitControls.js",
-    "three/addons/GLTFLoader.js": "npm:three@^0.160.0/examples/jsm/loaders/GLTFLoader.js",
-    "three/addons/TransformControls.js": "npm:three@^0.160.0/examples/jsm/controls/TransformControls.js"
+    "esbuild": "npm:esbuild@^0.24.0",
+    "@luca/esbuild-deno-loader": "jsr:@luca/esbuild-deno-loader@^0.11.0",
+    "three": "npm:three@^0.168.0",
+    "three/addons/OrbitControls.js": "npm:three@^0.168.0/examples/jsm/controls/OrbitControls.js",
+    "three/addons/GLTFLoader.js": "npm:three@^0.168.0/examples/jsm/loaders/GLTFLoader.js",
+    "three/addons/TransformControls.js": "npm:three@^0.168.0/examples/jsm/controls/TransformControls.js",
+    "three/addons/exporters/GLTFExporter.js": "npm:three@^0.168.0/examples/jsm/exporters/GLTFExporter.js",
+    "three/addons/exporters/STLExporter.js": "npm:three@^0.168.0/examples/jsm/exporters/STLExporter.js",
+    "manifold-3d": "npm:manifold-3d@^3.0.1"
   }
 }

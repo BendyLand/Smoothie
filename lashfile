@@ -1,21 +1,9 @@
 build:
-  lash compile
-  odin build src -extra-linker-flags:"-L./lib" -debug 
-  if [[ -f src.bin ]]; then
-    mv src.bin smoothie
-  else
-    echo "Build failed."
-  fi
+  cp $(find ~/.cache/deno -name "manifold.wasm" | head -n 1) public/manifold.wasm
+  deno run -A build.ts
 
 run:
-  odin run src -extra-linker-flags:"-L./lib"
-
-inspect:
-  gdb ./smoothie
-
-compile:
-  esbuild src/utils.ts > src/utils.js
-  esbuild src/app.ts > src/app.js
+  deno run --allow-net --allow-read serve.ts
 
 check:
-  odin check src
+  deno check src/app.ts

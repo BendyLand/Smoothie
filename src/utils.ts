@@ -2,6 +2,15 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 import { GLTFLoader } from "three/addons/GLTFLoader.js";
 import { TransformControls } from "three/addons/TransformControls.js";
+import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+import { STLExporter } from "three/addons/exporters/STLExporter.js";
+
+import {
+  createSolidManifold,
+  initWasm,
+  Manifold,
+  manifoldToBufferGeometry,
+} from "./csg.ts";
 
 export interface AppUI {
   canvas: HTMLCanvasElement;
@@ -34,6 +43,9 @@ export interface TransformSnapshot {
 }
 
 export interface AppState {
+  currentManifold: any;
+  manifoldUndoStack: any[];
+  manifoldRedoStack: any[];
   ui: AppUI;
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
@@ -41,7 +53,6 @@ export interface AppState {
   orbit: OrbitControls;
   transformGizmo: TransformControls;
   loader: GLTFLoader;
-  socket: WebSocket;
   baseMesh: THREE.Object3D | null;
   shapeStack: THREE.Mesh[];
   selectedObject: THREE.Object3D | null;
@@ -92,10 +103,6 @@ export function createAppState(): AppState {
   const grid = new THREE.GridHelper(10, 10, 0x444444, 0x222222);
   scene.add(grid);
 
-  const wsUrl = `ws://${window.location.host}/ws`;
-  const socket = new WebSocket(wsUrl);
-  socket.binaryType = "arraybuffer";
-
   const ui: AppUI = {
     canvas,
     shapeSelect: document.getElementById("shape-select") as HTMLSelectElement,
@@ -129,7 +136,9 @@ export function createAppState(): AppState {
     hudCancel: document.getElementById("hud-cancel") as HTMLButtonElement,
     btnUndo: document.getElementById("btn-undo") as HTMLButtonElement,
     btnRedo: document.getElementById("btn-redo") as HTMLButtonElement,
-    targetDimensions: document.getElementById("target-dimensions") as HTMLElement,
+    targetDimensions: document.getElementById(
+      "target-dimensions",
+    ) as HTMLElement,
   };
 
   const state: AppState = {
@@ -140,7 +149,6 @@ export function createAppState(): AppState {
     orbit,
     transformGizmo,
     loader: new GLTFLoader(),
-    socket,
     baseMesh: null,
     shapeStack: [],
     selectedObject: null,
@@ -156,6 +164,9 @@ export function createAppState(): AppState {
     undoCount: 0,
     redoCount: 0,
     hasBooleans: false,
+    currentManifold: null,
+    manifoldUndoStack: [],
+    manifoldRedoStack: [],
   };
   updateUiControlsAvailability(state);
   return state;
@@ -322,11 +333,9 @@ export function createPrimitiveGeometry(
 ): THREE.BufferGeometry {
   if (type === "cylinder") {
     return createBeveledCylinderGeometry(0.75, 1.5, bevelWidth, bevelSegments);
-  }
-  else if (type === "cone") {
+  } else if (type === "cone") {
     return createBeveledConeGeometry(0.75, 1.5, bevelWidth, bevelSegments);
-  }
-  else if (type === "monkey") {
+  } else if (type === "monkey") {
     if (monkeyGeometry) {
       return monkeyGeometry.clone();
     }
@@ -388,8 +397,7 @@ export function updateSelectedGeometry(state: AppState): void {
       bevelSegments,
     );
     oldGeom.dispose();
-  }
-  else if (state.selectedObject === state.baseMesh && state.baseMesh) {
+  } else if (state.selectedObject === state.baseMesh && state.baseMesh) {
     const shapeType = (state.baseMesh.userData.shapeType as string) ||
       state.currentBaseShape || "cube";
     state.baseMesh.userData.bevelWidth = bevelWidth;
@@ -445,8 +453,7 @@ export function selectObject(
       if (state.baseMesh && state.baseMesh.userData.shapeType) {
         state.ui.shapeSelect.value = state.baseMesh.userData.shapeType;
       }
-    }
-    else {
+    } else {
       const type = state.selectedObject.userData.shapeType || "cube";
       state.ui.labelActiveTarget.textContent = `Tool (${
         type.charAt(0).toUpperCase() + type.slice(1)
@@ -454,8 +461,7 @@ export function selectObject(
       state.ui.labelActiveTarget.style.color = "#e06c75";
       state.ui.shapeSelect.value = type;
     }
-  }
-  else {
+  } else {
     state.transformGizmo.detach();
     state.transformSnapshot = null;
     state.ui.gizmoHud.style.display = "none";
@@ -463,7 +469,7 @@ export function selectObject(
     state.ui.labelActiveTarget.style.color = "#888888";
   }
   updateUiControlsAvailability(state);
-  updateTargetDimensions(state)
+  updateTargetDimensions(state);
 }
 
 export function getSelectableRoot(
@@ -478,15 +484,12 @@ export function getSelectableRoot(
 }
 
 export function sendParameters(state: AppState): void {
-  if (state.socket.readyState !== WebSocket.OPEN) return;
-
   const payload = {
     shape: state.ui.shapeSelect.value,
     scale: parseFloat(state.ui.shapeScale.value),
     bevel_width: parseFloat(state.ui.bevelWidth.value),
     bevel_segments: parseInt(state.ui.bevelSegments.value, 10),
   };
-  state.socket.send(JSON.stringify(payload));
 }
 
 export function addSecondaryShape(state: AppState): void {
@@ -533,8 +536,7 @@ export function deleteSelectedShape(state: AppState): void {
 
   if (state.shapeStack.length > 0) {
     selectObject(state, state.shapeStack.at(-1)!);
-  }
-  else {
+  } else {
     selectObject(state, state.baseMesh);
   }
 }
@@ -624,68 +626,6 @@ export function updateGizmoHud(state: AppState): void {
   state.ui.gizmoHud.style.top = `${Math.round(screenY - 45)}px`;
 }
 
-export function setupWebSocket(state: AppState): void {
-  state.socket.onopen = () => {
-    console.log("Connected to Smoothie engine WebSocket.");
-    sendParameters(state);
-  };
-
-  state.socket.onmessage = (event: MessageEvent) => {
-    if (event.data instanceof ArrayBuffer) {
-      state.loader.parse(
-        event.data,
-        "",
-        (gltf) => {
-          // Preserve existing base transform if one exists
-          const prevPos = state.baseMesh
-            ? state.baseMesh.position.clone()
-            : new THREE.Vector3();
-          const prevQuat = state.baseMesh
-            ? state.baseMesh.quaternion.clone()
-            : new THREE.Quaternion();
-          const prevScale = state.baseMesh
-            ? state.baseMesh.scale.clone()
-            : new THREE.Vector3(1, 1, 1);
-          const wasBaseSelected = state.selectedObject === state.baseMesh;
-
-          if (state.baseMesh) {
-            state.scene.remove(state.baseMesh);
-          }
-
-          state.baseMesh = gltf.scene;
-          state.baseMesh.position.copy(prevPos);
-          state.baseMesh.quaternion.copy(prevQuat);
-          state.baseMesh.scale.copy(prevScale);
-          state.baseMesh.updateMatrixWorld(true);
-
-          state.baseMesh.userData.shapeType = state.currentBaseShape;
-
-          state.baseMesh.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-              child.castShadow = true;
-              child.receiveShadow = true;
-              child.userData.shapeType = state.currentBaseShape;
-            }
-          });
-
-          state.scene.add(state.baseMesh);
-          updateTargetDimensions(state)
-
-          // Re-attach gizmo to the new base mesh if it was active
-          if (wasBaseSelected) {
-            state.selectedObject = state.baseMesh;
-            state.transformGizmo.attach(state.baseMesh);
-            captureTransformSnapshot(state);
-          }
-
-          updateUiControlsAvailability(state);
-        },
-        (err) => console.error("Failed to parse GLB:", err),
-      );
-    }
-  };
-}
-
 export function setupEventListeners(state: AppState): void {
   state.transformGizmo.addEventListener(
     "dragging-changed",
@@ -747,7 +687,7 @@ export function setupEventListeners(state: AppState): void {
 
     if (state.selectedObject) {
       state.selectedObject.scale.set(val, val, val);
-      updateTargetDimensions(state)
+      updateTargetDimensions(state);
       state.selectedObject.updateMatrixWorld(true);
 
       if (state.selectedObject === state.baseMesh) {
@@ -776,8 +716,7 @@ export function setupEventListeners(state: AppState): void {
       state.ui.labelActiveTarget.textContent = `Tool (${
         newType.charAt(0).toUpperCase() + newType.slice(1)
       })`;
-    }
-    else {
+    } else {
       state.currentBaseShape = newType;
       state.undoCount = 0;
       state.redoCount = 0;
@@ -900,6 +839,27 @@ export function setupEventListeners(state: AppState): void {
     state.camera.updateProjectionMatrix();
     state.renderer.setSize(window.innerWidth, window.innerHeight);
   });
+
+  const btnExportGlb = document.getElementById("btn-export-glb");
+  if (btnExportGlb) {
+    btnExportGlb.addEventListener("click", () => {
+      console.log("Download .glb clicked");
+      exportGLB(state);
+    });
+  } else {
+    console.error("Could not find #btn-export-glb in DOM");
+  }
+
+  const btnExportStl = document.getElementById("btn-export-stl");
+  if (btnExportStl) {
+    btnExportStl.addEventListener("click", () => {
+      console.log("Download .stl clicked");
+      exportSTL(state);
+    });
+  }
+  else {
+    console.error("Could not find #btn-export-stl in DOM");
+  }
 }
 
 export function startRenderLoop(state: AppState): void {
@@ -916,10 +876,7 @@ export function commitBoolean(
   state: AppState,
   operation: "UNION" | "DIFFERENCE",
 ): void {
-  if (state.shapeStack.length === 0) {
-    console.warn("No tool shape in stack to commit.");
-    return;
-  }
+  if (state.shapeStack.length === 0) return;
 
   const toolObj =
     state.selectedObject && state.selectedObject !== state.baseMesh
@@ -928,37 +885,45 @@ export function commitBoolean(
 
   const { pos, rot, scale } = toRelativeTransform(toolObj, state.baseMesh);
 
-  const bevelWidth = toolObj.userData.bevelWidth ??
-    parseFloat(state.ui.bevelWidth.value);
-  const bevelSegments = toolObj.userData.bevelSegments ??
-    parseInt(state.ui.bevelSegments.value, 10);
+  // Create tool solid in WASM
+  const shapeType = toolObj.userData.shapeType || "cube";
+  let tool = createSolidManifold(shapeType, scale.x);
+  tool = tool.rotate([rot[0], rot[1], rot[2]]).translate([pos.x, pos.y, pos.z]);
 
-  const payload = {
-    action: "boolean",
-    operation,
-    tool_type: toolObj.userData.shapeType || "cube",
-    position: [pos.x, pos.y, pos.z],
-    rotation: rot,
-    scale: [scale.x, scale.y, scale.z],
-    bevel_width: bevelWidth,
-    bevel_segments: bevelSegments,
-  };
-
-  state.socket.send(JSON.stringify(payload));
-
-  state.undoCount += 1;
-  state.redoCount = 0;
-  state.hasBooleans = true; // Flag that base mesh now contains CSG geometry
-
-  state.transformGizmo.detach();
-  state.scene.remove(toolObj);
-
-  const idx = state.shapeStack.indexOf(toolObj);
-  if (idx !== -1) {
-    state.shapeStack.splice(idx, 1);
+  // Ensure base manifold exists
+  if (!(state as any).currentManifold) {
+    (state as any).currentManifold = createSolidManifold(
+      state.currentBaseShape || "cube",
+      parseFloat(state.ui.shapeScale.value),
+    );
   }
 
-  // Deselect through selectObject to clear target label, HUD, and re-evaluate UI controls
+  // Save state for Undo
+  (state as any).manifoldUndoStack.push((state as any).currentManifold);
+  (state as any).manifoldRedoStack.length = 0;
+  state.undoCount = (state as any).manifoldUndoStack.length;
+  state.redoCount = 0;
+  state.hasBooleans = true;
+
+  // Perform boolean operation
+  const base = (state as any).currentManifold;
+  (state as any).currentManifold = operation === "UNION"
+    ? base.add(tool)
+    : base.subtract(tool);
+
+  // Update Three.js mesh directly from WASM buffers
+  const newGeom = manifoldToBufferGeometry((state as any).currentManifold);
+  if (state.baseMesh && (state.baseMesh as THREE.Mesh).isMesh) {
+    (state.baseMesh as THREE.Mesh).geometry.dispose();
+    (state.baseMesh as THREE.Mesh).geometry = newGeom;
+  }
+
+  // Clean up scene tool
+  state.transformGizmo.detach();
+  state.scene.remove(toolObj);
+  const idx = state.shapeStack.indexOf(toolObj);
+  if (idx !== -1) state.shapeStack.splice(idx, 1);
+
   selectObject(state, null);
   updateTargetDimensions(state);
 }
@@ -1035,38 +1000,48 @@ export function updateUiControlsAvailability(state: AppState): void {
   state.ui.btnRedo.style.pointerEvents = canRedo ? "auto" : "none";
 }
 
-export function triggerRedo(state: AppState): void {
-  if (state.redoCount <= 0 || state.socket.readyState !== WebSocket.OPEN) {
-    return;
-  }
-
-  state.redoCount -= 1;
-  state.undoCount += 1;
-  state.hasBooleans = true;
-
-  state.socket.send(JSON.stringify({ action: "redo" }));
-  updateUiControlsAvailability(state);
-}
-
 export function triggerUndo(state: AppState): void {
   if (state.shapeStack.length > 0) {
     deleteSelectedShape(state);
     return;
   }
 
-  if (state.undoCount <= 0 || state.socket.readyState !== WebSocket.OPEN) {
-    return;
+  const stack = (state as any).manifoldUndoStack;
+  if (!stack || stack.length === 0) return;
+
+  (state as any).manifoldRedoStack.push((state as any).currentManifold);
+  (state as any).currentManifold = stack.pop();
+
+  state.undoCount = stack.length;
+  state.redoCount = (state as any).manifoldRedoStack.length;
+  if (state.undoCount === 0) state.hasBooleans = false;
+
+  const newGeom = manifoldToBufferGeometry((state as any).currentManifold);
+  if (state.baseMesh && (state.baseMesh as THREE.Mesh).isMesh) {
+    (state.baseMesh as THREE.Mesh).geometry.dispose();
+    (state.baseMesh as THREE.Mesh).geometry = newGeom;
   }
 
-  state.undoCount -= 1;
-  state.redoCount += 1;
+  updateUiControlsAvailability(state);
+}
 
-  // If undoing brings us back to the original primitive, unlock scaling
-  if (state.undoCount === 0) {
-    state.hasBooleans = false;
+export function triggerRedo(state: AppState): void {
+  const stack = (state as any).manifoldRedoStack;
+  if (!stack || stack.length === 0) return;
+
+  (state as any).manifoldUndoStack.push((state as any).currentManifold);
+  (state as any).currentManifold = stack.pop();
+
+  state.undoCount = (state as any).manifoldUndoStack.length;
+  state.redoCount = stack.length;
+  state.hasBooleans = true;
+
+  const newGeom = manifoldToBufferGeometry((state as any).currentManifold);
+  if (state.baseMesh && (state.baseMesh as THREE.Mesh).isMesh) {
+    (state.baseMesh as THREE.Mesh).geometry.dispose();
+    (state.baseMesh as THREE.Mesh).geometry = newGeom;
   }
 
-  state.socket.send(JSON.stringify({ action: "undo" }));
   updateUiControlsAvailability(state);
 }
 
@@ -1087,6 +1062,55 @@ export function updateTargetDimensions(state: AppState): void {
   _measureBox.setFromObject(target);
   _measureBox.getSize(_measureSize);
 
-  state.ui.targetDimensions.textContent = 
-    `${_measureSize.x.toFixed(2)} x ${_measureSize.y.toFixed(2)} x ${_measureSize.z.toFixed(2)}`;
+  state.ui.targetDimensions.textContent = `${_measureSize.x.toFixed(2)} x ${
+    _measureSize.y.toFixed(2)
+  } x ${_measureSize.z.toFixed(2)}`;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  // Defer revocation so Firefox does not abort the download stream
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+export function exportGLB(state: AppState) {
+  if (!state.baseMesh) {
+    console.warn("exportGLB: No baseMesh present in state.");
+    return;
+  }
+  console.log("Generating GLB export...");
+  const exporter = new GLTFExporter();
+  exporter.parse(
+    state.baseMesh,
+    (gltf) => {
+      const blob = new Blob([gltf as ArrayBuffer], {
+        type: "model/gltf-binary",
+      });
+      downloadBlob(blob, "smoothie_model.glb");
+      console.log("GLB download triggered.");
+    },
+    (err) => console.error("GLB Export Error:", err),
+    { binary: true },
+  );
+}
+
+export function exportSTL(state: AppState) {
+  if (!state.baseMesh) {
+    console.warn("exportSTL: No baseMesh present in state.");
+    return;
+  }
+  console.log("Generating STL export...");
+  const exporter = new STLExporter();
+  const result = exporter.parse(state.baseMesh, { binary: true });
+  // Pass result.buffer to ensure full ArrayBuffer compatibility
+  const blob = new Blob([result.buffer], { type: "model/stl" });
+  downloadBlob(blob, "smoothie_model.stl");
+  console.log("STL download triggered.");
 }
