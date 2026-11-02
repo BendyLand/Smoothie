@@ -1,4 +1,4 @@
-// ../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/build/three.module.js
+// ../../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/build/three.module.js
 var REVISION = "168";
 var MOUSE = { LEFT: 0, MIDDLE: 1, RIGHT: 2, ROTATE: 0, DOLLY: 1, PAN: 2 };
 var TOUCH = { ROTATE: 0, PAN: 1, DOLLY_PAN: 2, DOLLY_ROTATE: 3 };
@@ -22129,7 +22129,7 @@ if (typeof window !== "undefined") {
   }
 }
 
-// ../../.cache/deno/deno_esbuild/registry.npmjs.org/manifold-3d@3.5.4_@gltf-transform+core@4.5.1_@gltf-transform+extensions@4.5.1_@gltf-transform+functions@4.5.1_esbuild-wasm@0.27.7/node_modules/manifold-3d/manifold.js
+// ../../../.cache/deno/deno_esbuild/registry.npmjs.org/manifold-3d@3.5.4_@gltf-transform+core@4.5.1_@gltf-transform+extensions@4.5.1_@gltf-transform+functions@4.5.1_esbuild-wasm@0.27.7/node_modules/manifold-3d/manifold.js
 async function Module(moduleArg = {}) {
   var moduleRtn;
   var Module2 = moduleArg;
@@ -25118,7 +25118,7 @@ function manifoldToBufferGeometry(manifoldInstance, creaseAngleDeg = 30) {
   );
 }
 
-// ../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/controls/OrbitControls.js
+// ../../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/controls/OrbitControls.js
 var _changeEvent = { type: "change" };
 var _startEvent = { type: "start" };
 var _endEvent = { type: "end" };
@@ -25904,7 +25904,7 @@ function interceptControlUp(event) {
   }
 }
 
-// ../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js
+// ../../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js
 function toTrianglesDrawMode(geometry, drawMode) {
   if (drawMode === TrianglesDrawMode) {
     console.warn("THREE.BufferGeometryUtils.toTrianglesDrawMode(): Geometry already defined as triangles.");
@@ -25960,7 +25960,7 @@ function toTrianglesDrawMode(geometry, drawMode) {
   }
 }
 
-// ../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/loaders/GLTFLoader.js
+// ../../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/loaders/GLTFLoader.js
 var GLTFLoader = class extends Loader {
   constructor(manager) {
     super(manager);
@@ -28445,7 +28445,7 @@ function addPrimitiveAttributes(geometry, primitiveDef, parser) {
   });
 }
 
-// ../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/controls/TransformControls.js
+// ../../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/controls/TransformControls.js
 var _raycaster = new Raycaster();
 var _tempVector = new Vector3();
 var _tempVector2 = new Vector3();
@@ -29407,7 +29407,7 @@ var TransformControlsPlane = class extends Mesh {
   }
 };
 
-// ../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/utils/TextureUtils.js
+// ../../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/utils/TextureUtils.js
 var _renderer;
 var fullscreenQuadGeometry;
 var fullscreenQuadMaterial;
@@ -29473,7 +29473,7 @@ function decompress(texture, maxTextureSize = Infinity, renderer = null) {
   return readableTexture;
 }
 
-// ../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/exporters/GLTFExporter.js
+// ../../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/exporters/GLTFExporter.js
 var KHR_mesh_quantization_ExtraAttrTypes = {
   POSITION: [
     "byte",
@@ -31346,7 +31346,7 @@ GLTFExporter.Utils = {
   }
 };
 
-// ../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/exporters/STLExporter.js
+// ../../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/exporters/STLExporter.js
 var STLExporter = class {
   parse(scene, options = {}) {
     options = Object.assign({
@@ -31466,6 +31466,209 @@ var STLExporter = class {
   }
 };
 
+// src/extrusion.ts
+function getCoplanarRegion(geometry, seedTriIndex, angleEpsilonDeg = 1) {
+  const posAttr = geometry.attributes.position;
+  if (!posAttr) return null;
+  const numTris = geometry.index ? geometry.index.count / 3 : posAttr.count / 3;
+  const getTriVertex = (triIdx, corner, out) => {
+    const idx = geometry.index ? geometry.index.getX(triIdx * 3 + corner) : triIdx * 3 + corner;
+    out.set(posAttr.getX(idx), posAttr.getY(idx), posAttr.getZ(idx));
+  };
+  const getTriNormal = (triIdx, out) => {
+    const a = new Vector3();
+    const b = new Vector3();
+    const c = new Vector3();
+    getTriVertex(triIdx, 0, a);
+    getTriVertex(triIdx, 1, b);
+    getTriVertex(triIdx, 2, c);
+    return out.subVectors(c, b).cross(a.clone().sub(b)).normalize();
+  };
+  const targetNormal = new Vector3();
+  getTriNormal(seedTriIndex, targetNormal);
+  const seedPoint = new Vector3();
+  getTriVertex(seedTriIndex, 0, seedPoint);
+  const targetPlaneOffset = targetNormal.dot(seedPoint);
+  const cosThreshold = Math.cos(MathUtils.degToRad(angleEpsilonDeg));
+  const planeEpsilon = 1e-3;
+  const coplanarTris = [];
+  const tempNorm = new Vector3();
+  const tempPt = new Vector3();
+  for (let t = 0; t < numTris; t++) {
+    getTriNormal(t, tempNorm);
+    if (tempNorm.dot(targetNormal) >= cosThreshold) {
+      getTriVertex(t, 0, tempPt);
+      const planeOffset = tempNorm.dot(tempPt);
+      if (Math.abs(planeOffset - targetPlaneOffset) < planeEpsilon) {
+        coplanarTris.push(t);
+      }
+    }
+  }
+  const edgeCount = /* @__PURE__ */ new Map();
+  const coordKey = (v) => `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
+  const addEdge = (v1, v2) => {
+    const k1 = coordKey(v1);
+    const k2 = coordKey(v2);
+    const key = k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
+    const existing = edgeCount.get(key);
+    if (existing) {
+      existing.count++;
+    } else {
+      edgeCount.set(key, { count: 1, edge: { start: v1.clone(), end: v2.clone() } });
+    }
+  };
+  const vA = new Vector3();
+  const vB = new Vector3();
+  const vC = new Vector3();
+  for (const t of coplanarTris) {
+    getTriVertex(t, 0, vA);
+    getTriVertex(t, 1, vB);
+    getTriVertex(t, 2, vC);
+    addEdge(vA, vB);
+    addEdge(vB, vC);
+    addEdge(vC, vA);
+  }
+  const boundaryEdges = [];
+  for (const item of edgeCount.values()) {
+    if (item.count === 1) {
+      boundaryEdges.push(item.edge);
+    }
+  }
+  const regionVertices = [];
+  const seenVerts = /* @__PURE__ */ new Set();
+  const center = new Vector3();
+  for (const edge of boundaryEdges) {
+    for (const pt of [edge.start, edge.end]) {
+      const k = coordKey(pt);
+      if (!seenVerts.has(k)) {
+        seenVerts.add(k);
+        regionVertices.push(pt.clone());
+        center.add(pt);
+      }
+    }
+  }
+  if (regionVertices.length > 0) {
+    center.divideScalar(regionVertices.length);
+  }
+  return {
+    triangles: coplanarTris,
+    normal: targetNormal,
+    center,
+    boundaryEdges,
+    vertices: regionVertices
+  };
+}
+function createExtrusionPrismGeometry(sourceGeom, region, distance) {
+  const positions = [];
+  const indices = [];
+  const disp = region.normal.clone().multiplyScalar(distance);
+  const posAttr = sourceGeom.attributes.position;
+  const getTriVertex = (triIdx, corner, out) => {
+    const idx = sourceGeom.index ? sourceGeom.index.getX(triIdx * 3 + corner) : triIdx * 3 + corner;
+    out.set(posAttr.getX(idx), posAttr.getY(idx), posAttr.getZ(idx));
+  };
+  let vertIndex = 0;
+  const a = new Vector3();
+  const b = new Vector3();
+  const c = new Vector3();
+  for (const t of region.triangles) {
+    getTriVertex(t, 0, a);
+    getTriVertex(t, 1, b);
+    getTriVertex(t, 2, c);
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    if (distance > 0) {
+      indices.push(vertIndex, vertIndex + 2, vertIndex + 1);
+    } else {
+      indices.push(vertIndex, vertIndex + 1, vertIndex + 2);
+    }
+    vertIndex += 3;
+  }
+  for (const t of region.triangles) {
+    getTriVertex(t, 0, a);
+    getTriVertex(t, 1, b);
+    getTriVertex(t, 2, c);
+    a.add(disp);
+    b.add(disp);
+    c.add(disp);
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    if (distance > 0) {
+      indices.push(vertIndex, vertIndex + 1, vertIndex + 2);
+    } else {
+      indices.push(vertIndex, vertIndex + 2, vertIndex + 1);
+    }
+    vertIndex += 3;
+  }
+  for (const edge of region.boundaryEdges) {
+    const p1 = edge.start;
+    const p2 = edge.end;
+    const p1Disp = p1.clone().add(disp);
+    const p2Disp = p2.clone().add(disp);
+    positions.push(
+      p1.x,
+      p1.y,
+      p1.z,
+      p2.x,
+      p2.y,
+      p2.z,
+      p2Disp.x,
+      p2Disp.y,
+      p2Disp.z,
+      p1Disp.x,
+      p1Disp.y,
+      p1Disp.z
+    );
+    if (distance > 0) {
+      indices.push(
+        vertIndex,
+        vertIndex + 1,
+        vertIndex + 2,
+        vertIndex,
+        vertIndex + 2,
+        vertIndex + 3
+      );
+    } else {
+      indices.push(
+        vertIndex,
+        vertIndex + 2,
+        vertIndex + 1,
+        vertIndex,
+        vertIndex + 3,
+        vertIndex + 2
+      );
+    }
+    vertIndex += 4;
+  }
+  const prismGeom = new BufferGeometry();
+  prismGeom.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  prismGeom.setIndex(indices);
+  prismGeom.computeVertexNormals();
+  return prismGeom;
+}
+function applyFaceExtrusion(state2, region, distance) {
+  if (!state2.baseMesh || Math.abs(distance) < 1e-4) return;
+  const baseMesh = state2.baseMesh;
+  if (!state2.currentManifold) {
+    state2.currentManifold = geometryToManifold(baseMesh.geometry);
+  }
+  const prismGeom = createExtrusionPrismGeometry(
+    baseMesh.geometry,
+    region,
+    distance
+  );
+  const prismSolid = geometryToManifold(prismGeom);
+  state2.manifoldUndoStack.push(state2.currentManifold);
+  state2.manifoldRedoStack.length = 0;
+  state2.undoCount = state2.manifoldUndoStack.length;
+  state2.redoCount = 0;
+  state2.hasBooleans = true;
+  const base = state2.currentManifold;
+  state2.currentManifold = distance > 0 ? base.add(prismSolid) : base.subtract(prismSolid);
+  const updatedGeom = manifoldToBufferGeometry(state2.currentManifold);
+  baseMesh.geometry.dispose();
+  baseMesh.geometry = updatedGeom;
+  prismGeom.dispose();
+}
+
 // src/utils.ts
 function createAppState() {
   const canvas = document.getElementById("viewport");
@@ -31499,37 +31702,45 @@ function createAppState() {
       "active-target-label"
     ),
     addShapeBtn: document.getElementById("add-shape-btn"),
-    btnTranslate: document.getElementById(
-      "mode-translate"
-    ),
+    btnTranslate: document.getElementById("mode-translate"),
     btnRotate: document.getElementById("mode-rotate"),
     btnScale: document.getElementById("mode-scale"),
+    btnExtrude: document.getElementById("mode-extrude"),
     btnDelete: document.getElementById("btn-delete"),
     btnUnion: document.getElementById("btn-union"),
     btnDiff: document.getElementById("btn-diff"),
     bevelWidth: document.getElementById("bevel-width"),
-    bevelWidthVal: document.getElementById(
-      "bevel-width-val"
-    ),
-    bevelSegments: document.getElementById(
-      "bevel-segments"
-    ),
-    bevelSegmentsVal: document.getElementById(
-      "bevel-segments-val"
-    ),
+    bevelWidthVal: document.getElementById("bevel-width-val"),
+    bevelSegments: document.getElementById("bevel-segments"),
+    bevelSegmentsVal: document.getElementById("bevel-segments-val"),
     shapeScale: document.getElementById("shape-scale"),
-    shapeScaleVal: document.getElementById(
-      "shape-scale-val"
-    ),
+    shapeScaleVal: document.getElementById("shape-scale-val"),
     gizmoHud: document.getElementById("gizmo-hud"),
     hudConfirm: document.getElementById("hud-confirm"),
     hudCancel: document.getElementById("hud-cancel"),
     btnUndo: document.getElementById("btn-undo"),
     btnRedo: document.getElementById("btn-redo"),
-    targetDimensions: document.getElementById(
-      "target-dimensions"
-    )
+    targetDimensions: document.getElementById("target-dimensions")
   };
+  const outlineMat = new LineBasicMaterial({
+    color: 6402031,
+    linewidth: 2,
+    depthTest: false
+  });
+  const extrudeOutline = new LineSegments(new BufferGeometry(), outlineMat);
+  extrudeOutline.renderOrder = 1e3;
+  extrudeOutline.visible = false;
+  scene.add(extrudeOutline);
+  const previewMat = new MeshStandardMaterial({
+    color: 10011513,
+    roughness: 0.3,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.7
+  });
+  const extrudePreviewMesh = new Mesh(new BufferGeometry(), previewMat);
+  extrudePreviewMesh.visible = false;
+  scene.add(extrudePreviewMesh);
   const state2 = {
     ui,
     renderer,
@@ -31553,10 +31764,18 @@ function createAppState() {
     undoCount: 0,
     redoCount: 0,
     hasBooleans: false,
+    hasPendingTransform: false,
     currentManifold: null,
     manifoldUndoStack: [],
     manifoldRedoStack: [],
-    hasPendingTransform: false
+    isExtrudeMode: false,
+    isExtruding: false,
+    hoveredRegion: null,
+    activeExtrudeRegion: null,
+    extrudeOutline,
+    extrudePreviewMesh,
+    extrudeDistance: 0,
+    extrudeScreenDir: new Vector2()
   };
   updateUiControlsAvailability(state2);
   return state2;
@@ -31887,6 +32106,9 @@ function setupEventListeners(state2) {
       }
     }
   );
+  state2.ui.btnExtrude.addEventListener("click", () => {
+    setExtrudeMode(state2, !state2.isExtrudeMode);
+  });
   state2.transformGizmo.addEventListener("objectChange", () => {
     state2.hasPendingTransform = true;
   });
@@ -31904,12 +32126,15 @@ function setupEventListeners(state2) {
     addSecondaryShape(state2);
   });
   state2.ui.btnTranslate.addEventListener("click", () => {
+    setExtrudeMode(state2, false);
     state2.transformGizmo.setMode("translate");
   });
   state2.ui.btnRotate.addEventListener("click", () => {
+    setExtrudeMode(state2, false);
     state2.transformGizmo.setMode("rotate");
   });
   state2.ui.btnScale.addEventListener("click", () => {
+    setExtrudeMode(state2, false);
     state2.transformGizmo.setMode("scale");
   });
   state2.ui.btnDelete.addEventListener("click", () => {
@@ -32074,22 +32299,128 @@ function setupEventListeners(state2) {
         return;
       }
     }
+    if (e.key === "f" || e.key === "F") {
+      setExtrudeMode(state2, !state2.isExtrudeMode);
+    }
     if (e.key === "w" || e.key === "W") {
+      setExtrudeMode(state2, false);
       state2.transformGizmo.setMode("translate");
     }
     if (e.key === "e" || e.key === "E") {
+      setExtrudeMode(state2, false);
       state2.transformGizmo.setMode("rotate");
     }
     if (e.key === "r" || e.key === "R") {
+      setExtrudeMode(state2, false);
       state2.transformGizmo.setMode("scale");
     }
-    if (e.key === "Escape") {
-      cancelTransform(state2);
+  });
+  self.addEventListener("pointermove", (e) => {
+    if (!state2.isExtrudeMode || !state2.baseMesh) return;
+    const rect = state2.ui.canvas.getBoundingClientRect();
+    state2.mouse.x = (e.clientX - rect.left) / rect.width * 2 - 1;
+    state2.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    if (state2.isExtruding && state2.activeExtrudeRegion && state2.extrudePreviewMesh) {
+      const deltaScreenX = e.clientX - state2.pointerStartX;
+      const deltaScreenY = -(e.clientY - state2.pointerStartY);
+      const mouseDelta = new Vector2(deltaScreenX, deltaScreenY);
+      const projectedDist = mouseDelta.dot(state2.extrudeScreenDir);
+      state2.extrudeDistance = projectedDist * 0.01;
+      const mat = state2.extrudePreviewMesh.material;
+      if (mat) {
+        mat.color.setHex(state2.extrudeDistance >= 0 ? 10011513 : 14707829);
+      }
+      state2.extrudePreviewMesh.geometry.dispose();
+      state2.extrudePreviewMesh.geometry = createExtrusionPrismGeometry(
+        state2.baseMesh.geometry,
+        state2.activeExtrudeRegion,
+        state2.extrudeDistance
+      );
+      state2.extrudePreviewMesh.visible = true;
+      return;
     }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      confirmTransform(state2);
+    state2.raycaster.setFromCamera(state2.mouse, state2.camera);
+    const hits = state2.raycaster.intersectObject(state2.baseMesh, false);
+    if (hits.length > 0 && hits[0].faceIndex !== void 0) {
+      const geom = state2.baseMesh.geometry;
+      const region = getCoplanarRegion(geom, hits[0].faceIndex);
+      state2.hoveredRegion = region;
+      updateFaceHighlight(state2, region);
+    } else {
+      state2.hoveredRegion = null;
+      updateFaceHighlight(state2, null);
     }
+  });
+  self.addEventListener("pointerdown", (e) => {
+    state2.pointerStartX = e.clientX;
+    state2.pointerStartY = e.clientY;
+    if (state2.isExtrudeMode && state2.hoveredRegion && state2.baseMesh) {
+      state2.isExtruding = true;
+      state2.orbit.enabled = false;
+      state2.activeExtrudeRegion = state2.hoveredRegion;
+      state2.extrudeDistance = 0;
+      const origin = state2.activeExtrudeRegion.vertices[0] ?? new Vector3();
+      const worldNorm = state2.activeExtrudeRegion.normal.clone();
+      const p0 = origin.clone().project(state2.camera);
+      const p1 = origin.clone().add(worldNorm).project(state2.camera);
+      state2.extrudeScreenDir.set(p1.x - p0.x, p1.y - p0.y).normalize();
+      if (state2.extrudeScreenDir.lengthSq() < 1e-4) {
+        state2.extrudeScreenDir.set(0, 1);
+      }
+    }
+  });
+  self.addEventListener("pointerup", (e) => {
+    if (state2.isExtruding && state2.activeExtrudeRegion) {
+      applyFaceExtrusion(state2, state2.activeExtrudeRegion, state2.extrudeDistance);
+      state2.isExtruding = false;
+      state2.orbit.enabled = true;
+      state2.activeExtrudeRegion = null;
+      if (state2.extrudePreviewMesh) {
+        state2.extrudePreviewMesh.visible = false;
+      }
+      updateTargetDimensions(state2);
+      updateUiControlsAvailability(state2);
+      const rect2 = state2.ui.canvas.getBoundingClientRect();
+      state2.mouse.x = (e.clientX - rect2.left) / rect2.width * 2 - 1;
+      state2.mouse.y = -((e.clientY - rect2.top) / rect2.height) * 2 + 1;
+      state2.raycaster.setFromCamera(state2.mouse, state2.camera);
+      if (state2.baseMesh) {
+        const hits = state2.raycaster.intersectObject(state2.baseMesh, false);
+        if (hits.length > 0 && hits[0].faceIndex !== void 0) {
+          state2.hoveredRegion = getCoplanarRegion(
+            state2.baseMesh.geometry,
+            hits[0].faceIndex
+          );
+        } else {
+          state2.hoveredRegion = null;
+        }
+      }
+      updateFaceHighlight(state2, state2.hoveredRegion);
+      return;
+    }
+    if (e.target !== state2.ui.canvas || state2.isExtrudeMode) return;
+    if (state2.isGizmoInteracting || state2.transformGizmo.axis !== null) return;
+    const deltaX = Math.abs(e.clientX - state2.pointerStartX);
+    const deltaY = Math.abs(e.clientY - state2.pointerStartY);
+    if (deltaX > 5 || deltaY > 5) return;
+    const rect = state2.ui.canvas.getBoundingClientRect();
+    state2.mouse.x = (e.clientX - rect.left) / rect.width * 2 - 1;
+    state2.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    state2.raycaster.setFromCamera(state2.mouse, state2.camera);
+    const toolHits = state2.raycaster.intersectObjects(state2.shapeStack, false);
+    if (toolHits.length > 0) {
+      selectObject(state2, toolHits[0].object);
+      return;
+    }
+    if (state2.baseMesh) {
+      const baseHits = state2.raycaster.intersectObjects([state2.baseMesh], true);
+      if (baseHits.length > 0) {
+        const root = getSelectableRoot(baseHits[0].object, state2.scene);
+        selectObject(state2, root ?? state2.baseMesh);
+        return;
+      }
+    }
+    selectObject(state2, null);
   });
   self.addEventListener("resize", () => {
     state2.camera.aspect = window.innerWidth / window.innerHeight;
@@ -32128,31 +32459,16 @@ function commitBoolean(state2, operation) {
   if (state2.shapeStack.length === 0 || !state2.baseMesh) return;
   const toolObj = state2.selectedObject && state2.selectedObject !== state2.baseMesh ? state2.selectedObject : state2.shapeStack.at(-1);
   toolObj.updateMatrixWorld(true);
-  const toolPos = new Vector3();
-  const toolQuat = new Quaternion();
-  const toolScale = new Vector3();
-  toolObj.matrixWorld.decompose(toolPos, toolQuat, toolScale);
-  const toolEuler = new Euler().setFromQuaternion(toolQuat, "XYZ");
-  let toolSolid = geometryToManifold(toolObj.geometry);
-  toolSolid = toolSolid.scale([toolScale.x, toolScale.y, toolScale.z]).rotate([
-    MathUtils.radToDeg(toolEuler.x),
-    MathUtils.radToDeg(toolEuler.y),
-    MathUtils.radToDeg(toolEuler.z)
-  ]).translate([toolPos.x, toolPos.y, toolPos.z]);
+  const toolWorldGeom = toolObj.geometry.clone();
+  toolWorldGeom.applyMatrix4(toolObj.matrixWorld);
+  const toolSolid = geometryToManifold(toolWorldGeom);
+  toolWorldGeom.dispose();
   if (!state2.currentManifold) {
     state2.baseMesh.updateMatrixWorld(true);
-    const basePos = new Vector3();
-    const baseQuat = new Quaternion();
-    const baseScale = new Vector3();
-    state2.baseMesh.matrixWorld.decompose(basePos, baseQuat, baseScale);
-    const baseEuler = new Euler().setFromQuaternion(baseQuat, "XYZ");
-    let baseSolid = geometryToManifold(state2.baseMesh.geometry);
-    baseSolid = baseSolid.scale([baseScale.x, baseScale.y, baseScale.z]).rotate([
-      MathUtils.radToDeg(baseEuler.x),
-      MathUtils.radToDeg(baseEuler.y),
-      MathUtils.radToDeg(baseEuler.z)
-    ]).translate([basePos.x, basePos.y, basePos.z]);
-    state2.currentManifold = baseSolid;
+    const baseWorldGeom = state2.baseMesh.geometry.clone();
+    baseWorldGeom.applyMatrix4(state2.baseMesh.matrixWorld);
+    state2.currentManifold = geometryToManifold(baseWorldGeom);
+    baseWorldGeom.dispose();
   }
   state2.manifoldUndoStack.push(state2.currentManifold);
   state2.manifoldRedoStack.length = 0;
@@ -32343,6 +32659,52 @@ function exportSTL(state2) {
 }
 function isUniformScale(scale, eps = 1e-4) {
   return Math.abs(scale.x - scale.y) < eps && Math.abs(scale.y - scale.z) < eps;
+}
+function setExtrudeMode(state2, enabled) {
+  state2.isExtrudeMode = enabled;
+  if (enabled) {
+    state2.transformGizmo.detach();
+    state2.ui.btnExtrude.style.background = "#3e4451";
+    state2.ui.btnExtrude.style.borderColor = "#61afef";
+  } else {
+    state2.ui.btnExtrude.style.background = "#222";
+    state2.ui.btnExtrude.style.borderColor = "#444";
+    if (state2.extrudeOutline) state2.extrudeOutline.visible = false;
+    if (state2.extrudePreviewMesh) state2.extrudePreviewMesh.visible = false;
+    state2.hoveredRegion = null;
+    state2.activeExtrudeRegion = null;
+    if (state2.selectedObject) {
+      state2.transformGizmo.attach(state2.selectedObject);
+    }
+  }
+}
+function updateFaceHighlight(state2, region) {
+  if (!state2.extrudeOutline) return;
+  if (!region || !state2.baseMesh) {
+    state2.extrudeOutline.visible = false;
+    return;
+  }
+  const linePositions = [];
+  for (const edge of region.boundaryEdges) {
+    linePositions.push(
+      edge.start.x,
+      edge.start.y,
+      edge.start.z,
+      edge.end.x,
+      edge.end.y,
+      edge.end.z
+    );
+  }
+  state2.extrudeOutline.geometry.dispose();
+  state2.extrudeOutline.geometry = new BufferGeometry();
+  state2.extrudeOutline.geometry.setAttribute(
+    "position",
+    new Float32BufferAttribute(linePositions, 3)
+  );
+  state2.extrudeOutline.position.copy(state2.baseMesh.position);
+  state2.extrudeOutline.rotation.copy(state2.baseMesh.rotation);
+  state2.extrudeOutline.scale.copy(state2.baseMesh.scale);
+  state2.extrudeOutline.visible = true;
 }
 
 // src/app.ts
