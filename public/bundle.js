@@ -22411,7 +22411,7 @@ async function Module(moduleArg = {}) {
     Module2.Manifold.prototype.simplify = function(tolerance = 0) {
       return this._Simplify(tolerance);
     };
-    class Mesh2 {
+    class Mesh3 {
       constructor({ numProp = 3, triVerts = new Uint32Array(), vertProperties = new Float32Array(), mergeFromVert, mergeToVert, runIndex, runOriginalID, faceID, halfedgeTangent, runTransform, runFlags, tolerance = 0 } = {}) {
         this.numProp = numProp;
         this.triVerts = triVerts;
@@ -22469,9 +22469,9 @@ async function Module(moduleArg = {}) {
         return this.runFlags != null && run2 < this.runFlags.length && (this.runFlags[run2] & 2) !== 0;
       }
     }
-    Module2.Mesh = Mesh2;
+    Module2.Mesh = Mesh3;
     Module2.Manifold.prototype.getMesh = function(normalIdx = -1) {
-      return new Mesh2(this._GetMeshJS(normalIdx));
+      return new Mesh3(this._GetMeshJS(normalIdx));
     };
     Module2.ManifoldError = function ManifoldError(code, ...args) {
       let message = "Unknown error";
@@ -24960,6 +24960,7 @@ var manifold_default = Module;
 // src/csg.ts
 var wasm = null;
 var Manifold = null;
+var Mesh2 = null;
 async function initWasm() {
   if (wasm) return;
   try {
@@ -24970,40 +24971,151 @@ async function initWasm() {
     });
     wasm.setup();
     Manifold = wasm.Manifold;
+    Mesh2 = wasm.Mesh;
     console.log("Manifold WASM initialized successfully.");
   } catch (err) {
     console.error("Failed to initialize Manifold WASM:", err);
     throw err;
   }
 }
-function manifoldToBufferGeometry(manifoldInstance) {
-  const mesh = manifoldInstance.getMesh();
-  const geom = new BufferGeometry();
-  geom.setAttribute(
-    "position",
-    new BufferAttribute(mesh.vertProperties, mesh.numProp)
-  );
-  geom.setIndex(new BufferAttribute(mesh.triVerts, 1));
-  geom.computeVertexNormals();
-  return geom;
-}
-function createSolidManifold(shape, scale) {
+function geometryToManifold(geometry) {
   if (!Manifold) {
     throw new Error("Manifold is not initialized yet.");
   }
-  const s = scale * 1.5;
-  switch (shape) {
-    case "cylinder": {
-      const raw = Manifold.cylinder(s, s * 0.5, s * 0.5, 32, true);
-      return raw.rotate([-90, 0, 0]);
-    }
-    case "cone": {
-      const raw = Manifold.cylinder(s, s * 0.5, 0, 32, true);
-      return raw.rotate([-90, 0, 0]);
-    }
-    default:
-      return Manifold.cube([s, s, s], true);
+  const posAttr = geometry.attributes.position;
+  if (!posAttr) {
+    throw new Error("Geometry has no position attribute.");
   }
+  const precision = 1e5;
+  const coordMap = /* @__PURE__ */ new Map();
+  const uniquePositions = [];
+  const remap = new Uint32Array(posAttr.count);
+  for (let i = 0; i < posAttr.count; i++) {
+    const x = posAttr.getX(i);
+    const y = posAttr.getY(i);
+    const z = posAttr.getZ(i);
+    const key = `${Math.round(x * precision)},${Math.round(y * precision)},${Math.round(z * precision)}`;
+    let idx = coordMap.get(key);
+    if (idx === void 0) {
+      idx = uniquePositions.length / 3;
+      coordMap.set(key, idx);
+      uniquePositions.push(x, y, z);
+    }
+    remap[i] = idx;
+  }
+  const rawIndices = geometry.index ? geometry.index.array : null;
+  const count = rawIndices ? rawIndices.length : posAttr.count;
+  const validTris = [];
+  for (let i = 0; i < count; i += 3) {
+    const a = rawIndices ? remap[rawIndices[i]] : remap[i];
+    const b = rawIndices ? remap[rawIndices[i + 1]] : remap[i + 1];
+    const c = rawIndices ? remap[rawIndices[i + 2]] : remap[i + 2];
+    if (a !== b && b !== c && a !== c) {
+      validTris.push(a, b, c);
+    }
+  }
+  const meshData = {
+    numProp: 3,
+    vertProperties: new Float32Array(uniquePositions),
+    triVerts: new Uint32Array(validTris)
+  };
+  if (wasm && wasm.Mesh) {
+    try {
+      const m = new wasm.Mesh(meshData);
+      if (typeof m.merge === "function") {
+        m.merge();
+      }
+      return new Manifold(m);
+    } catch {
+      return new Manifold(meshData);
+    }
+  }
+  return new Manifold(meshData);
+}
+function computeCreasedNormals(positions, indices, creaseAngleRad = 30 * Math.PI / 180) {
+  const numTris = indices.length / 3;
+  const faceNormals = new Float32Array(numTris * 3);
+  const pA = new Vector3();
+  const pB = new Vector3();
+  const pC = new Vector3();
+  const cb = new Vector3();
+  const ab = new Vector3();
+  for (let t = 0; t < numTris; t++) {
+    const i3 = t * 3;
+    const a = indices[i3] * 3;
+    const b = indices[i3 + 1] * 3;
+    const c = indices[i3 + 2] * 3;
+    pA.set(positions[a], positions[a + 1], positions[a + 2]);
+    pB.set(positions[b], positions[b + 1], positions[b + 2]);
+    pC.set(positions[c], positions[c + 1], positions[c + 2]);
+    cb.subVectors(pC, pB);
+    ab.subVectors(pA, pB);
+    cb.cross(ab).normalize();
+    faceNormals[i3] = cb.x;
+    faceNormals[i3 + 1] = cb.y;
+    faceNormals[i3 + 2] = cb.z;
+  }
+  const vertToTris = [];
+  const numVerts = positions.length / 3;
+  for (let i = 0; i < numVerts; i++) {
+    vertToTris.push([]);
+  }
+  for (let t = 0; t < numTris; t++) {
+    const i3 = t * 3;
+    vertToTris[indices[i3]].push(t);
+    vertToTris[indices[i3 + 1]].push(t);
+    vertToTris[indices[i3 + 2]].push(t);
+  }
+  const cosThreshold = Math.cos(creaseAngleRad);
+  const outPositions = new Float32Array(numTris * 9);
+  const outNormals = new Float32Array(numTris * 9);
+  const thisNorm = new Vector3();
+  const otherNorm = new Vector3();
+  const smoothNorm = new Vector3();
+  for (let t = 0; t < numTris; t++) {
+    const t3 = t * 3;
+    thisNorm.set(faceNormals[t3], faceNormals[t3 + 1], faceNormals[t3 + 2]);
+    for (let corner = 0; corner < 3; corner++) {
+      const origVert = indices[t3 + corner];
+      const origPosIdx = origVert * 3;
+      const outIdx = (t * 3 + corner) * 3;
+      outPositions[outIdx] = positions[origPosIdx];
+      outPositions[outIdx + 1] = positions[origPosIdx + 1];
+      outPositions[outIdx + 2] = positions[origPosIdx + 2];
+      smoothNorm.set(0, 0, 0);
+      const adjTris = vertToTris[origVert];
+      for (let k = 0; k < adjTris.length; k++) {
+        const neighborTri = adjTris[k];
+        const n3 = neighborTri * 3;
+        otherNorm.set(faceNormals[n3], faceNormals[n3 + 1], faceNormals[n3 + 2]);
+        if (thisNorm.dot(otherNorm) >= cosThreshold) {
+          smoothNorm.add(otherNorm);
+        }
+      }
+      if (smoothNorm.lengthSq() > 0) {
+        smoothNorm.normalize();
+      } else {
+        smoothNorm.copy(thisNorm);
+      }
+      outNormals[outIdx] = smoothNorm.x;
+      outNormals[outIdx + 1] = smoothNorm.y;
+      outNormals[outIdx + 2] = smoothNorm.z;
+    }
+  }
+  const geom = new BufferGeometry();
+  geom.setAttribute("position", new BufferAttribute(outPositions, 3));
+  geom.setAttribute("normal", new BufferAttribute(outNormals, 3));
+  return geom;
+}
+function manifoldToBufferGeometry(manifoldInstance, creaseAngleDeg = 30) {
+  const mesh = manifoldInstance.getMesh();
+  const positions = mesh.vertProperties;
+  const indices = mesh.triVerts;
+  return computeCreasedNormals(
+    positions,
+    indices,
+    MathUtils.degToRad(creaseAngleDeg)
+  );
 }
 
 // ../../.cache/deno/deno_esbuild/registry.npmjs.org/three@0.168.0/node_modules/three/examples/jsm/controls/OrbitControls.js
@@ -31391,6 +31503,7 @@ function createAppState() {
       "mode-translate"
     ),
     btnRotate: document.getElementById("mode-rotate"),
+    btnScale: document.getElementById("mode-scale"),
     btnDelete: document.getElementById("btn-delete"),
     btnUnion: document.getElementById("btn-union"),
     btnDiff: document.getElementById("btn-diff"),
@@ -31442,7 +31555,8 @@ function createAppState() {
     hasBooleans: false,
     currentManifold: null,
     manifoldUndoStack: [],
-    manifoldRedoStack: []
+    manifoldRedoStack: [],
+    hasPendingTransform: false
   };
   updateUiControlsAvailability(state2);
   return state2;
@@ -31629,6 +31743,8 @@ function selectObject(state2, obj) {
   if (state2.selectedObject === obj) return;
   applyHighlight(state2.selectedObject, false);
   state2.selectedObject = obj;
+  state2.hasPendingTransform = false;
+  state2.ui.gizmoHud.style.display = "none";
   if (state2.selectedObject) {
     state2.transformGizmo.attach(state2.selectedObject);
     applyHighlight(state2.selectedObject, true);
@@ -31663,6 +31779,25 @@ function selectObject(state2, obj) {
   }
   updateUiControlsAvailability(state2);
   updateTargetDimensions(state2);
+}
+function confirmTransform(state2) {
+  if (!state2.selectedObject) return;
+  captureTransformSnapshot(state2);
+  state2.hasPendingTransform = false;
+  state2.ui.gizmoHud.style.display = "none";
+  updateTargetDimensions(state2);
+}
+function cancelTransform(state2) {
+  if (!state2.selectedObject || !state2.transformSnapshot) return;
+  state2.selectedObject.position.copy(state2.transformSnapshot.position);
+  state2.selectedObject.quaternion.copy(state2.transformSnapshot.quaternion);
+  state2.selectedObject.scale.copy(state2.transformSnapshot.scale);
+  state2.selectedObject.updateMatrixWorld(true);
+  state2.transformGizmo.attach(state2.selectedObject);
+  state2.hasPendingTransform = false;
+  state2.ui.gizmoHud.style.display = "none";
+  updateTargetDimensions(state2);
+  updateUiControlsAvailability(state2);
 }
 function getSelectableRoot(obj, sceneRoot) {
   let curr = obj;
@@ -31719,45 +31854,9 @@ function deleteSelectedShape(state2) {
     selectObject(state2, state2.baseMesh);
   }
 }
-function cancelTransform(state2) {
-  if (!state2.selectedObject || !state2.transformSnapshot) return;
-  state2.selectedObject.position.copy(state2.transformSnapshot.position);
-  state2.selectedObject.quaternion.copy(state2.transformSnapshot.quaternion);
-  state2.selectedObject.scale.copy(state2.transformSnapshot.scale);
-  state2.ui.shapeScale.value = state2.selectedObject.scale.x.toFixed(2);
-  state2.ui.shapeScaleVal.textContent = state2.selectedObject.scale.x.toFixed(2);
-  state2.selectedObject.updateMatrixWorld(true);
-  state2.transformGizmo.attach(state2.selectedObject);
-  state2.ui.gizmoHud.style.display = "none";
-}
-function toRelativeTransform(toolObj, baseMesh) {
-  toolObj.updateMatrixWorld(true);
-  if (baseMesh) baseMesh.updateMatrixWorld(true);
-  const invBase = baseMesh ? baseMesh.matrixWorld.clone().invert() : new Matrix4();
-  const relMatrix = new Matrix4().multiplyMatrices(
-    invBase,
-    toolObj.matrixWorld
-  );
-  const pos = new Vector3();
-  const quat = new Quaternion();
-  const scale = new Vector3();
-  relMatrix.decompose(pos, quat, scale);
-  const euler = new Euler().setFromQuaternion(quat, "XYZ");
-  const rot = [
-    MathUtils.radToDeg(euler.x),
-    MathUtils.radToDeg(euler.y),
-    MathUtils.radToDeg(euler.z)
-  ];
-  return { pos, quat, rot, scale };
-}
-function confirmTransform(state2) {
-  if (!state2.selectedObject) return;
-  captureTransformSnapshot(state2);
-  state2.ui.gizmoHud.style.display = "none";
-}
 function updateGizmoHud(state2) {
   const target = state2.transformGizmo.object ?? state2.selectedObject;
-  if (!target) {
+  if (!target || !state2.hasPendingTransform) {
     state2.ui.gizmoHud.style.display = "none";
     return;
   }
@@ -31775,8 +31874,7 @@ function updateGizmoHud(state2) {
   const screenX = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
   const screenY = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
   state2.ui.gizmoHud.style.display = "flex";
-  state2.ui.gizmoHud.style.left = `${Math.round(screenX + 45)}px`;
-  state2.ui.gizmoHud.style.top = `${Math.round(screenY - 45)}px`;
+  state2.ui.gizmoHud.style.transform = `translate3d(${screenX + 45}px, ${screenY - 45}px, 0)`;
 }
 function setupEventListeners(state2) {
   state2.transformGizmo.addEventListener(
@@ -31784,8 +31882,18 @@ function setupEventListeners(state2) {
     (event) => {
       state2.orbit.enabled = !event.value;
       state2.isGizmoInteracting = event.value;
+      if (!event.value) {
+        updateTargetDimensions(state2);
+      }
     }
   );
+  state2.transformGizmo.addEventListener("objectChange", () => {
+    state2.hasPendingTransform = true;
+  });
+  state2.transformGizmo.addEventListener("change", () => {
+    updateTargetDimensions(state2);
+    updateUiControlsAvailability(state2);
+  });
   state2.ui.hudConfirm.addEventListener("click", () => {
     confirmTransform(state2);
   });
@@ -31800,6 +31908,9 @@ function setupEventListeners(state2) {
   });
   state2.ui.btnRotate.addEventListener("click", () => {
     state2.transformGizmo.setMode("rotate");
+  });
+  state2.ui.btnScale.addEventListener("click", () => {
+    state2.transformGizmo.setMode("scale");
   });
   state2.ui.btnDelete.addEventListener("click", () => {
     deleteSelectedShape(state2);
@@ -31825,6 +31936,7 @@ function setupEventListeners(state2) {
     state2.ui.shapeScaleVal.textContent = val.toFixed(2);
     if (state2.selectedObject) {
       state2.selectedObject.scale.set(val, val, val);
+      state2.hasPendingTransform = true;
       updateTargetDimensions(state2);
       state2.selectedObject.updateMatrixWorld(true);
       if (state2.selectedObject === state2.baseMesh) {
@@ -31848,13 +31960,49 @@ function setupEventListeners(state2) {
       target.userData.shapeType = newType;
       state2.ui.labelActiveTarget.textContent = `Tool (${newType.charAt(0).toUpperCase() + newType.slice(1)})`;
     } else {
+      if (state2.hasBooleans) {
+        if (state2.baseMesh?.userData?.shapeType) {
+          state2.ui.shapeSelect.value = state2.baseMesh.userData.shapeType;
+        }
+        return;
+      }
       state2.currentBaseShape = newType;
       state2.undoCount = 0;
       state2.redoCount = 0;
       state2.hasBooleans = false;
+      state2.currentManifold = null;
+      if (state2.baseMesh) {
+        state2.baseMesh.userData.shapeType = newType;
+        const bevelWidth = parseFloat(state2.ui.bevelWidth.value);
+        const bevelSegments = parseInt(state2.ui.bevelSegments.value, 10);
+        if (state2.baseMesh.isMesh) {
+          const mesh = state2.baseMesh;
+          mesh.geometry.dispose();
+          mesh.geometry = createPrimitiveGeometry(
+            newType,
+            state2.monkeyGeometry,
+            bevelWidth,
+            bevelSegments
+          );
+        } else {
+          state2.baseMesh.traverse((child) => {
+            if (child.isMesh) {
+              const mesh = child;
+              mesh.geometry.dispose();
+              mesh.geometry = createPrimitiveGeometry(
+                newType,
+                state2.monkeyGeometry,
+                bevelWidth,
+                bevelSegments
+              );
+            }
+          });
+        }
+      }
       sendParameters(state2);
     }
     updateUiControlsAvailability(state2);
+    updateTargetDimensions(state2);
   });
   state2.ui.bevelWidth.addEventListener("input", (e) => {
     const isBaseSelected = !state2.selectedObject || state2.selectedObject === state2.baseMesh;
@@ -31932,6 +32080,9 @@ function setupEventListeners(state2) {
     if (e.key === "e" || e.key === "E") {
       state2.transformGizmo.setMode("rotate");
     }
+    if (e.key === "r" || e.key === "R") {
+      state2.transformGizmo.setMode("scale");
+    }
     if (e.key === "Escape") {
       cancelTransform(state2);
     }
@@ -31974,17 +32125,34 @@ function startRenderLoop(state2) {
   renderFrame();
 }
 function commitBoolean(state2, operation) {
-  if (state2.shapeStack.length === 0) return;
+  if (state2.shapeStack.length === 0 || !state2.baseMesh) return;
   const toolObj = state2.selectedObject && state2.selectedObject !== state2.baseMesh ? state2.selectedObject : state2.shapeStack.at(-1);
-  const { pos, rot, scale } = toRelativeTransform(toolObj, state2.baseMesh);
-  const shapeType = toolObj.userData.shapeType || "cube";
-  let tool = createSolidManifold(shapeType, scale.x);
-  tool = tool.rotate([rot[0], rot[1], rot[2]]).translate([pos.x, pos.y, pos.z]);
+  toolObj.updateMatrixWorld(true);
+  const toolPos = new Vector3();
+  const toolQuat = new Quaternion();
+  const toolScale = new Vector3();
+  toolObj.matrixWorld.decompose(toolPos, toolQuat, toolScale);
+  const toolEuler = new Euler().setFromQuaternion(toolQuat, "XYZ");
+  let toolSolid = geometryToManifold(toolObj.geometry);
+  toolSolid = toolSolid.scale([toolScale.x, toolScale.y, toolScale.z]).rotate([
+    MathUtils.radToDeg(toolEuler.x),
+    MathUtils.radToDeg(toolEuler.y),
+    MathUtils.radToDeg(toolEuler.z)
+  ]).translate([toolPos.x, toolPos.y, toolPos.z]);
   if (!state2.currentManifold) {
-    state2.currentManifold = createSolidManifold(
-      state2.currentBaseShape || "cube",
-      parseFloat(state2.ui.shapeScale.value)
-    );
+    state2.baseMesh.updateMatrixWorld(true);
+    const basePos = new Vector3();
+    const baseQuat = new Quaternion();
+    const baseScale = new Vector3();
+    state2.baseMesh.matrixWorld.decompose(basePos, baseQuat, baseScale);
+    const baseEuler = new Euler().setFromQuaternion(baseQuat, "XYZ");
+    let baseSolid = geometryToManifold(state2.baseMesh.geometry);
+    baseSolid = baseSolid.scale([baseScale.x, baseScale.y, baseScale.z]).rotate([
+      MathUtils.radToDeg(baseEuler.x),
+      MathUtils.radToDeg(baseEuler.y),
+      MathUtils.radToDeg(baseEuler.z)
+    ]).translate([basePos.x, basePos.y, basePos.z]);
+    state2.currentManifold = baseSolid;
   }
   state2.manifoldUndoStack.push(state2.currentManifold);
   state2.manifoldRedoStack.length = 0;
@@ -31992,12 +32160,16 @@ function commitBoolean(state2, operation) {
   state2.redoCount = 0;
   state2.hasBooleans = true;
   const base = state2.currentManifold;
-  state2.currentManifold = operation === "UNION" ? base.add(tool) : base.subtract(tool);
+  state2.currentManifold = operation === "UNION" ? base.add(toolSolid) : base.subtract(toolSolid);
   const newGeom = manifoldToBufferGeometry(state2.currentManifold);
-  if (state2.baseMesh && state2.baseMesh.isMesh) {
+  if (state2.baseMesh.isMesh) {
     state2.baseMesh.geometry.dispose();
     state2.baseMesh.geometry = newGeom;
   }
+  state2.baseMesh.position.set(0, 0, 0);
+  state2.baseMesh.rotation.set(0, 0, 0);
+  state2.baseMesh.scale.set(1, 1, 1);
+  state2.baseMesh.updateMatrixWorld(true);
   state2.transformGizmo.detach();
   state2.scene.remove(toolObj);
   const idx = state2.shapeStack.indexOf(toolObj);
@@ -32016,9 +32188,23 @@ function updateUiControlsAvailability(state2) {
   const isMonkeyActive = dropdownIsMonkey || baseIsMonkey || selectedIsMonkey;
   const isBaseOrNone = !isToolSelected;
   const lockBase = isBaseOrNone && state2.hasBooleans;
-  state2.ui.shapeScale.disabled = lockBase;
-  state2.ui.shapeScale.style.opacity = lockBase ? "0.35" : "1.0";
-  state2.ui.shapeScale.style.cursor = lockBase ? "not-allowed" : "auto";
+  const activeTarget = state2.selectedObject ?? state2.baseMesh;
+  const isNonUniform = activeTarget ? !isUniformScale(activeTarget.scale) : false;
+  const disableScaleSlider = lockBase || isNonUniform;
+  state2.ui.shapeScale.disabled = disableScaleSlider;
+  state2.ui.shapeScale.style.opacity = disableScaleSlider ? "0.35" : "1.0";
+  state2.ui.shapeScale.style.cursor = disableScaleSlider ? "not-allowed" : "auto";
+  if (activeTarget) {
+    if (isNonUniform) {
+      state2.ui.shapeScaleVal.textContent = "mixed";
+    } else {
+      state2.ui.shapeScale.value = activeTarget.scale.x.toFixed(2);
+      state2.ui.shapeScaleVal.textContent = activeTarget.scale.x.toFixed(2);
+    }
+  }
+  state2.ui.btnScale.disabled = lockBase;
+  state2.ui.btnScale.style.opacity = lockBase ? "0.35" : "1.0";
+  state2.ui.btnScale.style.cursor = lockBase ? "not-allowed" : "pointer";
   const disableBevels = isMonkeyActive || lockBase;
   const bevelOpacity = disableBevels ? "0.35" : "1.0";
   const bevelCursor = disableBevels ? "not-allowed" : "auto";
@@ -32068,7 +32254,14 @@ function triggerUndo(state2) {
     state2.baseMesh.geometry.dispose();
     state2.baseMesh.geometry = newGeom;
   }
+  if (state2.baseMesh) {
+    state2.baseMesh.position.set(0, 0, 0);
+    state2.baseMesh.rotation.set(0, 0, 0);
+    state2.baseMesh.scale.set(1, 1, 1);
+    state2.baseMesh.updateMatrixWorld(true);
+  }
   updateUiControlsAvailability(state2);
+  updateTargetDimensions(state2);
 }
 function triggerRedo(state2) {
   const stack = state2.manifoldRedoStack;
@@ -32083,7 +32276,14 @@ function triggerRedo(state2) {
     state2.baseMesh.geometry.dispose();
     state2.baseMesh.geometry = newGeom;
   }
+  if (state2.baseMesh) {
+    state2.baseMesh.position.set(0, 0, 0);
+    state2.baseMesh.rotation.set(0, 0, 0);
+    state2.baseMesh.scale.set(1, 1, 1);
+    state2.baseMesh.updateMatrixWorld(true);
+  }
   updateUiControlsAvailability(state2);
+  updateTargetDimensions(state2);
 }
 var _measureBox = new Box3();
 var _measureSize = new Vector3();
@@ -32140,6 +32340,9 @@ function exportSTL(state2) {
   const blob = new Blob([result.buffer], { type: "model/stl" });
   downloadBlob(blob, "smoothie_model.stl");
   console.log("STL download triggered.");
+}
+function isUniformScale(scale, eps = 1e-4) {
+  return Math.abs(scale.x - scale.y) < eps && Math.abs(scale.y - scale.z) < eps;
 }
 
 // src/app.ts

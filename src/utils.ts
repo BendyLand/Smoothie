@@ -6,7 +6,7 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { STLExporter } from "three/addons/exporters/STLExporter.js";
 
 import {
-  createSolidManifold,
+  geometryToManifold,
   initWasm,
   Manifold,
   manifoldToBufferGeometry,
@@ -19,6 +19,7 @@ export interface AppUI {
   addShapeBtn: HTMLButtonElement;
   btnTranslate: HTMLButtonElement;
   btnRotate: HTMLButtonElement;
+  btnScale: HTMLButtonElement;
   btnDelete: HTMLButtonElement;
   btnUndo: HTMLButtonElement;
   btnRedo: HTMLButtonElement;
@@ -68,6 +69,7 @@ export interface AppState {
   undoCount: number;
   redoCount: number;
   hasBooleans: boolean;
+  hasPendingTransform: boolean;
 }
 
 export function createAppState(): AppState {
@@ -114,6 +116,7 @@ export function createAppState(): AppState {
       "mode-translate",
     ) as HTMLButtonElement,
     btnRotate: document.getElementById("mode-rotate") as HTMLButtonElement,
+    btnScale: document.getElementById("mode-scale") as HTMLButtonElement,
     btnDelete: document.getElementById("btn-delete") as HTMLButtonElement,
     btnUnion: document.getElementById("btn-union") as HTMLButtonElement,
     btnDiff: document.getElementById("btn-diff") as HTMLButtonElement,
@@ -167,6 +170,7 @@ export function createAppState(): AppState {
     currentManifold: null,
     manifoldUndoStack: [],
     manifoldRedoStack: [],
+    hasPendingTransform: false,
   };
   updateUiControlsAvailability(state);
   return state;
@@ -294,7 +298,6 @@ export function createBeveledConeGeometry(
   const b = Math.max(0, Math.min(bevelWidth, maxBevel));
   const radialSegments = Math.max(16, bevelSegments * 8);
 
-  // Fallback to standard Three.js ConeGeometry when no bevel is applied
   if (b <= 0) {
     return new THREE.ConeGeometry(radius, height, radialSegments);
   }
@@ -302,13 +305,9 @@ export function createBeveledConeGeometry(
   const points: THREE.Vector2[] = [];
   const h2 = height / 2;
 
-  // Center of the bottom base
   points.push(new THREE.Vector2(0, -h2));
-
-  // Straight line across bottom cap towards the rounded edge
   points.push(new THREE.Vector2(radius - b, -h2));
 
-  // Quarter-circle rounding the bottom rim (from bottom flat to sloped cone side)
   const arcSteps = Math.max(2, bevelSegments);
   for (let i = 1; i <= arcSteps; i++) {
     const angle = -Math.PI / 2 + (Math.PI / 2) * (i / arcSteps);
@@ -317,7 +316,6 @@ export function createBeveledConeGeometry(
     points.push(new THREE.Vector2(x, y));
   }
 
-  // Apex tip at the top (+Y)
   points.push(new THREE.Vector2(0, h2));
 
   const geom = new THREE.LatheGeometry(points, radialSegments);
@@ -333,9 +331,11 @@ export function createPrimitiveGeometry(
 ): THREE.BufferGeometry {
   if (type === "cylinder") {
     return createBeveledCylinderGeometry(0.75, 1.5, bevelWidth, bevelSegments);
-  } else if (type === "cone") {
+  }
+  else if (type === "cone") {
     return createBeveledConeGeometry(0.75, 1.5, bevelWidth, bevelSegments);
-  } else if (type === "monkey") {
+  }
+  else if (type === "monkey") {
     if (monkeyGeometry) {
       return monkeyGeometry.clone();
     }
@@ -397,7 +397,8 @@ export function updateSelectedGeometry(state: AppState): void {
       bevelSegments,
     );
     oldGeom.dispose();
-  } else if (state.selectedObject === state.baseMesh && state.baseMesh) {
+  }
+  else if (state.selectedObject === state.baseMesh && state.baseMesh) {
     const shapeType = (state.baseMesh.userData.shapeType as string) ||
       state.currentBaseShape || "cube";
     state.baseMesh.userData.bevelWidth = bevelWidth;
@@ -427,6 +428,8 @@ export function selectObject(
 
   applyHighlight(state.selectedObject, false);
   state.selectedObject = obj;
+  state.hasPendingTransform = false;
+  state.ui.gizmoHud.style.display = "none";
 
   if (state.selectedObject) {
     state.transformGizmo.attach(state.selectedObject);
@@ -470,6 +473,31 @@ export function selectObject(
   }
   updateUiControlsAvailability(state);
   updateTargetDimensions(state);
+}
+
+export function confirmTransform(state: AppState): void {
+  if (!state.selectedObject) return;
+
+  captureTransformSnapshot(state);
+  state.hasPendingTransform = false;
+  state.ui.gizmoHud.style.display = "none";
+  updateTargetDimensions(state);
+}
+
+export function cancelTransform(state: AppState): void {
+  if (!state.selectedObject || !state.transformSnapshot) return;
+
+  state.selectedObject.position.copy(state.transformSnapshot.position);
+  state.selectedObject.quaternion.copy(state.transformSnapshot.quaternion);
+  state.selectedObject.scale.copy(state.transformSnapshot.scale);
+
+  state.selectedObject.updateMatrixWorld(true);
+  state.transformGizmo.attach(state.selectedObject);
+
+  state.hasPendingTransform = false;
+  state.ui.gizmoHud.style.display = "none";
+  updateTargetDimensions(state);
+  updateUiControlsAvailability(state);
 }
 
 export function getSelectableRoot(
@@ -536,25 +564,10 @@ export function deleteSelectedShape(state: AppState): void {
 
   if (state.shapeStack.length > 0) {
     selectObject(state, state.shapeStack.at(-1)!);
-  } else {
+  }
+  else {
     selectObject(state, state.baseMesh);
   }
-}
-
-export function cancelTransform(state: AppState): void {
-  if (!state.selectedObject || !state.transformSnapshot) return;
-
-  state.selectedObject.position.copy(state.transformSnapshot.position);
-  state.selectedObject.quaternion.copy(state.transformSnapshot.quaternion);
-  state.selectedObject.scale.copy(state.transformSnapshot.scale);
-
-  state.ui.shapeScale.value = state.selectedObject.scale.x.toFixed(2);
-  state.ui.shapeScaleVal.textContent = state.selectedObject.scale.x.toFixed(2);
-
-  state.selectedObject.updateMatrixWorld(true);
-  state.transformGizmo.attach(state.selectedObject);
-
-  state.ui.gizmoHud.style.display = "none";
 }
 
 export function toRelativeTransform(
@@ -587,19 +600,9 @@ export function toRelativeTransform(
   return { pos, quat, rot, scale };
 }
 
-export function confirmTransform(state: AppState): void {
-  if (!state.selectedObject) return;
-
-  // Capture the new confirmed position as the revert snapshot
-  captureTransformSnapshot(state);
-
-  // Hide the floating HUD
-  state.ui.gizmoHud.style.display = "none";
-}
-
 export function updateGizmoHud(state: AppState): void {
   const target = state.transformGizmo.object ?? state.selectedObject;
-  if (!target) {
+  if (!target || !state.hasPendingTransform) {
     state.ui.gizmoHud.style.display = "none";
     return;
   }
@@ -622,8 +625,7 @@ export function updateGizmoHud(state: AppState): void {
   const screenY = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
 
   state.ui.gizmoHud.style.display = "flex";
-  state.ui.gizmoHud.style.left = `${Math.round(screenX + 45)}px`;
-  state.ui.gizmoHud.style.top = `${Math.round(screenY - 45)}px`;
+  state.ui.gizmoHud.style.transform = `translate3d(${screenX + 45}px, ${screenY - 45}px, 0)`;
 }
 
 export function setupEventListeners(state: AppState): void {
@@ -632,8 +634,20 @@ export function setupEventListeners(state: AppState): void {
     (event: { value: boolean }) => {
       state.orbit.enabled = !event.value;
       state.isGizmoInteracting = event.value;
+      if (!event.value) {
+        updateTargetDimensions(state);
+      }
     },
   );
+
+  state.transformGizmo.addEventListener("objectChange", () => {
+    state.hasPendingTransform = true;
+  });
+
+  state.transformGizmo.addEventListener("change", () => {
+    updateTargetDimensions(state);
+    updateUiControlsAvailability(state);
+  });
 
   state.ui.hudConfirm.addEventListener("click", () => {
     confirmTransform(state);
@@ -653,6 +667,10 @@ export function setupEventListeners(state: AppState): void {
 
   state.ui.btnRotate.addEventListener("click", () => {
     state.transformGizmo.setMode("rotate");
+  });
+
+  state.ui.btnScale.addEventListener("click", () => {
+    state.transformGizmo.setMode("scale");
   });
 
   state.ui.btnDelete.addEventListener("click", () => {
@@ -687,6 +705,7 @@ export function setupEventListeners(state: AppState): void {
 
     if (state.selectedObject) {
       state.selectedObject.scale.set(val, val, val);
+      state.hasPendingTransform = true;
       updateTargetDimensions(state);
       state.selectedObject.updateMatrixWorld(true);
 
@@ -698,7 +717,9 @@ export function setupEventListeners(state: AppState): void {
 
   state.ui.shapeSelect.addEventListener("change", () => {
     const newType = state.ui.shapeSelect.value;
+
     if (state.selectedObject && state.selectedObject !== state.baseMesh) {
+      // Update secondary tool shape
       const target = state.selectedObject as THREE.Mesh;
       const bevelWidth = target.userData.bevelWidth ??
         parseFloat(state.ui.bevelWidth.value);
@@ -716,14 +737,61 @@ export function setupEventListeners(state: AppState): void {
       state.ui.labelActiveTarget.textContent = `Tool (${
         newType.charAt(0).toUpperCase() + newType.slice(1)
       })`;
-    } else {
+    }
+    else {
+      // Target is baseMesh (or nothing selected, defaults to base)
+      if (state.hasBooleans) {
+        // Revert select dropdown if locked by existing booleans
+        if (state.baseMesh?.userData?.shapeType) {
+          state.ui.shapeSelect.value = state.baseMesh.userData.shapeType;
+        }
+        return;
+      }
+
       state.currentBaseShape = newType;
       state.undoCount = 0;
       state.redoCount = 0;
       state.hasBooleans = false;
+      (state as any).currentManifold = null;
+
+      if (state.baseMesh) {
+        state.baseMesh.userData.shapeType = newType;
+        const bevelWidth = parseFloat(state.ui.bevelWidth.value);
+        const bevelSegments = parseInt(state.ui.bevelSegments.value, 10);
+
+        // Swap geometry on baseMesh
+        if ((state.baseMesh as THREE.Mesh).isMesh) {
+          const mesh = state.baseMesh as THREE.Mesh;
+          mesh.geometry.dispose();
+          mesh.geometry = createPrimitiveGeometry(
+            newType,
+            state.monkeyGeometry,
+            bevelWidth,
+            bevelSegments,
+          );
+        }
+        else {
+          // Fallback for compound objects
+          state.baseMesh.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              const mesh = child as THREE.Mesh;
+              mesh.geometry.dispose();
+              mesh.geometry = createPrimitiveGeometry(
+                newType,
+                state.monkeyGeometry,
+                bevelWidth,
+                bevelSegments,
+              );
+            }
+          });
+        }
+      }
+
       sendParameters(state);
     }
+
     updateUiControlsAvailability(state);
+    updateTargetDimensions(state);
   });
 
   state.ui.bevelWidth.addEventListener("input", (e: Event) => {
@@ -825,6 +893,9 @@ export function setupEventListeners(state: AppState): void {
     if (e.key === "e" || e.key === "E") {
       state.transformGizmo.setMode("rotate");
     }
+    if (e.key === "r" || e.key === "R") {
+      state.transformGizmo.setMode("scale");
+    }
     if (e.key === "Escape") {
       cancelTransform(state);
     }
@@ -846,7 +917,8 @@ export function setupEventListeners(state: AppState): void {
       console.log("Download .glb clicked");
       exportGLB(state);
     });
-  } else {
+  }
+  else {
     console.error("Could not find #btn-export-glb in DOM");
   }
 
@@ -876,49 +948,83 @@ export function commitBoolean(
   state: AppState,
   operation: "UNION" | "DIFFERENCE",
 ): void {
-  if (state.shapeStack.length === 0) return;
+  if (state.shapeStack.length === 0 || !state.baseMesh) return;
 
   const toolObj =
     state.selectedObject && state.selectedObject !== state.baseMesh
       ? (state.selectedObject as THREE.Mesh)
       : state.shapeStack.at(-1)!;
 
-  const { pos, rot, scale } = toRelativeTransform(toolObj, state.baseMesh);
+  // 1. Decompose Tool World Matrix
+  toolObj.updateMatrixWorld(true);
+  const toolPos = new THREE.Vector3();
+  const toolQuat = new THREE.Quaternion();
+  const toolScale = new THREE.Vector3();
+  toolObj.matrixWorld.decompose(toolPos, toolQuat, toolScale);
 
-  // Create tool solid in WASM
-  const shapeType = toolObj.userData.shapeType || "cube";
-  let tool = createSolidManifold(shapeType, scale.x);
-  tool = tool.rotate([rot[0], rot[1], rot[2]]).translate([pos.x, pos.y, pos.z]);
+  const toolEuler = new THREE.Euler().setFromQuaternion(toolQuat, "XYZ");
 
-  // Ensure base manifold exists
+  // Build Tool Solid directly from its active (beveled) Three.js geometry
+  let toolSolid = geometryToManifold(toolObj.geometry);
+  toolSolid = toolSolid
+    .scale([toolScale.x, toolScale.y, toolScale.z])
+    .rotate([
+      THREE.MathUtils.radToDeg(toolEuler.x),
+      THREE.MathUtils.radToDeg(toolEuler.y),
+      THREE.MathUtils.radToDeg(toolEuler.z),
+    ])
+    .translate([toolPos.x, toolPos.y, toolPos.z]);
+
+  // 2. Ensure Base Manifold exists, seeded from its active (beveled) geometry
   if (!(state as any).currentManifold) {
-    (state as any).currentManifold = createSolidManifold(
-      state.currentBaseShape || "cube",
-      parseFloat(state.ui.shapeScale.value),
-    );
+    state.baseMesh.updateMatrixWorld(true);
+    const basePos = new THREE.Vector3();
+    const baseQuat = new THREE.Quaternion();
+    const baseScale = new THREE.Vector3();
+    state.baseMesh.matrixWorld.decompose(basePos, baseQuat, baseScale);
+
+    const baseEuler = new THREE.Euler().setFromQuaternion(baseQuat, "XYZ");
+
+    // Convert the beveled baseMesh geometry to Manifold
+    let baseSolid = geometryToManifold((state.baseMesh as THREE.Mesh).geometry);
+    baseSolid = baseSolid
+      .scale([baseScale.x, baseScale.y, baseScale.z])
+      .rotate([
+        THREE.MathUtils.radToDeg(baseEuler.x),
+        THREE.MathUtils.radToDeg(baseEuler.y),
+        THREE.MathUtils.radToDeg(baseEuler.z),
+      ])
+      .translate([basePos.x, basePos.y, basePos.z]);
+
+    (state as any).currentManifold = baseSolid;
   }
 
-  // Save state for Undo
+  // 3. Save state for Undo
   (state as any).manifoldUndoStack.push((state as any).currentManifold);
   (state as any).manifoldRedoStack.length = 0;
   state.undoCount = (state as any).manifoldUndoStack.length;
   state.redoCount = 0;
   state.hasBooleans = true;
 
-  // Perform boolean operation
+  // 4. Perform CSG Boolean
   const base = (state as any).currentManifold;
-  (state as any).currentManifold = operation === "UNION"
-    ? base.add(tool)
-    : base.subtract(tool);
+  (state as any).currentManifold =
+    operation === "UNION" ? base.add(toolSolid) : base.subtract(toolSolid);
 
-  // Update Three.js mesh directly from WASM buffers
+  // 5. Update Base Mesh Geometry (retains bevels and boolean cuts)
   const newGeom = manifoldToBufferGeometry((state as any).currentManifold);
-  if (state.baseMesh && (state.baseMesh as THREE.Mesh).isMesh) {
+  if ((state.baseMesh as THREE.Mesh).isMesh) {
     (state.baseMesh as THREE.Mesh).geometry.dispose();
     (state.baseMesh as THREE.Mesh).geometry = newGeom;
   }
 
-  // Clean up scene tool
+  // Reset base mesh transform back to identity since world coords are baked into the vertices
+  state.baseMesh.position.set(0, 0, 0);
+  state.baseMesh.rotation.set(0, 0, 0);
+  state.baseMesh.scale.set(1, 1, 1);
+  state.baseMesh.updateMatrixWorld(true);
+
+  // 6. Clean up scene tool
   state.transformGizmo.detach();
   state.scene.remove(toolObj);
   const idx = state.shapeStack.indexOf(toolObj);
@@ -933,7 +1039,6 @@ export function updateUiControlsAvailability(state: AppState): void {
   const baseIsMonkey = state.currentBaseShape === "monkey" ||
     state.baseMesh?.userData?.shapeType === "monkey";
 
-  // Check if active target is a secondary tool shape
   const isToolSelected = state.selectedObject != null &&
     state.selectedObject !== state.baseMesh &&
     state.shapeStack.includes(state.selectedObject as THREE.Mesh);
@@ -953,12 +1058,31 @@ export function updateUiControlsAvailability(state: AppState): void {
   const isBaseOrNone = !isToolSelected;
   const lockBase = isBaseOrNone && state.hasBooleans;
 
-  // Scale Slider (locked on base if booleans exist)
-  state.ui.shapeScale.disabled = lockBase;
-  state.ui.shapeScale.style.opacity = lockBase ? "0.35" : "1.0";
-  state.ui.shapeScale.style.cursor = lockBase ? "not-allowed" : "auto";
+  // Check scale uniformity of the currently active target
+  const activeTarget = state.selectedObject ?? state.baseMesh;
+  const isNonUniform = activeTarget ? !isUniformScale(activeTarget.scale) : false;
 
-  // Bevel Sliders (locked on base if booleans exist, or if monkey)
+  // Scale Slider (disabled if base is locked or active target has anisotropic scaling)
+  const disableScaleSlider = lockBase || isNonUniform;
+  state.ui.shapeScale.disabled = disableScaleSlider;
+  state.ui.shapeScale.style.opacity = disableScaleSlider ? "0.35" : "1.0";
+  state.ui.shapeScale.style.cursor = disableScaleSlider ? "not-allowed" : "auto";
+
+  if (activeTarget) {
+    if (isNonUniform) {
+      state.ui.shapeScaleVal.textContent = "mixed";
+    } else {
+      state.ui.shapeScale.value = activeTarget.scale.x.toFixed(2);
+      state.ui.shapeScaleVal.textContent = activeTarget.scale.x.toFixed(2);
+    }
+  }
+
+  // Scale Gizmo Button (only locked on base if booleans exist)
+  state.ui.btnScale.disabled = lockBase;
+  state.ui.btnScale.style.opacity = lockBase ? "0.35" : "1.0";
+  state.ui.btnScale.style.cursor = lockBase ? "not-allowed" : "pointer";
+
+  // Bevel Sliders
   const disableBevels = isMonkeyActive || lockBase;
   const bevelOpacity = disableBevels ? "0.35" : "1.0";
   const bevelCursor = disableBevels ? "not-allowed" : "auto";
@@ -970,7 +1094,7 @@ export function updateUiControlsAvailability(state: AppState): void {
   state.ui.bevelSegments.style.opacity = bevelOpacity;
   state.ui.bevelSegments.style.cursor = bevelCursor;
 
-  // Boolean Action Buttons (disabled if monkey or no tool shape in stack)
+  // Boolean Action Buttons
   const disableBooleans = isMonkeyActive || state.shapeStack.length === 0;
   const booleanOpacity = disableBooleans ? "0.35" : "1.0";
   const booleanCursor = disableBooleans ? "not-allowed" : "pointer";
@@ -1022,7 +1146,15 @@ export function triggerUndo(state: AppState): void {
     (state.baseMesh as THREE.Mesh).geometry = newGeom;
   }
 
+  if (state.baseMesh) {
+    state.baseMesh.position.set(0, 0, 0);
+    state.baseMesh.rotation.set(0, 0, 0);
+    state.baseMesh.scale.set(1, 1, 1);
+    state.baseMesh.updateMatrixWorld(true);
+  }
+
   updateUiControlsAvailability(state);
+  updateTargetDimensions(state);
 }
 
 export function triggerRedo(state: AppState): void {
@@ -1042,7 +1174,15 @@ export function triggerRedo(state: AppState): void {
     (state.baseMesh as THREE.Mesh).geometry = newGeom;
   }
 
+  if (state.baseMesh) {
+    state.baseMesh.position.set(0, 0, 0);
+    state.baseMesh.rotation.set(0, 0, 0);
+    state.baseMesh.scale.set(1, 1, 1);
+    state.baseMesh.updateMatrixWorld(true);
+  }
+
   updateUiControlsAvailability(state);
+  updateTargetDimensions(state);
 }
 
 const _measureBox = new THREE.Box3();
@@ -1057,7 +1197,6 @@ export function updateTargetDimensions(state: AppState): void {
     return;
   }
 
-  // Force world matrix calculation so bounding box accounts for transforms
   target.updateMatrixWorld(true);
   _measureBox.setFromObject(target);
   _measureBox.getSize(_measureSize);
@@ -1075,8 +1214,7 @@ function downloadBlob(blob: Blob, filename: string) {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  
-  // Defer revocation so Firefox does not abort the download stream
+
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
@@ -1109,8 +1247,14 @@ export function exportSTL(state: AppState) {
   console.log("Generating STL export...");
   const exporter = new STLExporter();
   const result = exporter.parse(state.baseMesh, { binary: true });
-  // Pass result.buffer to ensure full ArrayBuffer compatibility
   const blob = new Blob([result.buffer], { type: "model/stl" });
   downloadBlob(blob, "smoothie_model.stl");
   console.log("STL download triggered.");
+}
+
+export function isUniformScale(scale: THREE.Vector3, eps = 1e-4): boolean {
+  return (
+    Math.abs(scale.x - scale.y) < eps &&
+    Math.abs(scale.y - scale.z) < eps
+  );
 }

@@ -7,3 +7,15 @@ run:
 
 check:
   deno check src/app.ts
+
+view:
+  if [[ -f ~/Downloads/smoothie_model.glb ]]; then
+    f3d ~/Downloads/smoothie_model.glb
+  elif [[ -f ~/Downloads/smoothie_model.stl ]]; then
+    f3d ~/Downloads/smoothie_model.stl
+  else
+    echo "Model not downloaded"
+  fi
+
+clean-downloads:
+  rm ~/Downloads/*
