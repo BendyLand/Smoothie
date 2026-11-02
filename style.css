@@ -91,3 +91,44 @@ button:hover {
 #hud-cancel:hover {
   background: #ff453a;
 }
+
+.gizmo-btn-grid {
+  display: grid;
+  grid-template-columns: repeat(2, auto) auto;
+  grid-template-areas:
+    "move   rotate  delete"
+    "scale  extrude delete";
+  gap: 6px;
+  align-items: stretch;
+}
+
+#mode-translate {
+  grid-area: move;
+}
+
+#mode-rotate {
+  grid-area: rotate;
+}
+
+#mode-scale {
+  grid-area: scale;
+}
+
+#mode-extrude {
+  grid-area: extrude;
+}
+
+#btn-delete {
+  grid-area: delete;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2a1b1b;
+  border-color: #5c2828;
+  color: #e06c75;
+}
+
+#btn-delete:hover {
+  background: #3d2222;
+  border-color: #e06c75;
+}
